@@ -21,6 +21,11 @@ from homeassistant.components.recorder.statistics import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, UnitOfEnergy
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -53,6 +58,7 @@ UPDATE_INTERVAL = timedelta(hours=12)
 OVERLAP_DAYS_DAILY = 30
 OVERLAP_DAYS_HOURLY = 3
 INITIAL_HISTORY_DAYS = 30
+CONSECUTIVE_FAILURES_FOR_REPAIR = 3
 
 _STAT_ID_RE = re.compile(r"[^a-z0-9_]")
 
@@ -83,11 +89,10 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
     config_entry: PacificPowerConfigEntry
 
     def __init__(self, hass: Any, entry: PacificPowerConfigEntry) -> None:
-        super().__init__(
-            hass, _LOGGER, name=DOMAIN, update_interval=UPDATE_INTERVAL
-        )
+        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=UPDATE_INTERVAL)
         self._entry = entry
         self._last_data_received: datetime | None = None
+        self._consecutive_failures: int = 0
         self._account = AccountInfo(
             customer_idn=entry.data[CONF_CUSTOMER_IDN],
             account_sequence=entry.data[CONF_ACCOUNT_SEQUENCE],
@@ -106,9 +111,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             await api.async_login()
 
             user = await api.async_get_user_info()
-            accounts = await api.async_get_accounts(
-                user.get("webUserId", "")
-            )
+            accounts = await api.async_get_accounts(user.get("webUserId", ""))
 
             for acct in accounts:
                 if (
@@ -127,13 +130,37 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             else:
                 new_data_ts = await self._fetch_daily(api)
         except PacificPowerAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            self._consecutive_failures += 1
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN,
+                translation_key="auth_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except PacificPowerConnectionError as err:
-            raise UpdateFailed(str(err)) from err
+            self._consecutive_failures += 1
+            self._maybe_create_repair(str(err))
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="connection_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except PacificPowerApiError as err:
-            raise UpdateFailed(str(err)) from err
+            self._consecutive_failures += 1
+            self._maybe_create_repair(str(err))
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="api_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
         finally:
             await api.async_stop()
+
+        self._consecutive_failures = 0
+        async_delete_issue(
+            self.hass,
+            DOMAIN,
+            f"persistent_failure_{self._entry.entry_id}",
+        )
 
         if new_data_ts:
             self._last_data_received = new_data_ts
@@ -151,18 +178,14 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             stat_id, OVERLAP_DAYS_HOURLY
         )
 
-        tz = ZoneInfo(
-            self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone)
-        )
+        tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
         now = datetime.now(UTC)
         cursor = start.replace(hour=0, minute=0, second=0, microsecond=0)
         all_readings: list[HourlyUsage] = []
 
         while cursor.date() <= now.date():
             try:
-                readings = await api.async_get_hourly_usage(
-                    self._account, cursor
-                )
+                readings = await api.async_get_hourly_usage(self._account, cursor)
                 all_readings.extend(readings)
             except PacificPowerApiError:
                 _LOGGER.debug("No hourly data for %s", cursor.date())
@@ -218,9 +241,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         stat_id = _make_stat_id(self._account)
         last_sum, start, last_ts = await self._get_last_stat(stat_id)
 
-        tz = ZoneInfo(
-            self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone)
-        )
+        tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
         now = datetime.now(UTC)
         all_readings: list[DailyUsage] = []
         cursor = start.replace(day=1)
@@ -230,9 +251,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             ) - timedelta(days=1)
             if month_end > now:
                 month_end = now
-            readings = await api.async_get_daily_usage(
-                self._account, cursor, month_end
-            )
+            readings = await api.async_get_daily_usage(self._account, cursor, month_end)
             all_readings.extend(readings)
             cursor = month_end + timedelta(days=1)
 
@@ -249,9 +268,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         for reading in all_readings:
             if reading.kwh < 0:
                 continue
-            start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(
-                tzinfo=tz
-            )
+            start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(tzinfo=tz)
             running_sum += reading.kwh
             statistics.append(
                 StatisticData(
@@ -290,6 +307,23 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             return last_sum, start, last_ts
 
         return 0.0, now - timedelta(days=INITIAL_HISTORY_DAYS), None
+
+    def _maybe_create_repair(self, error: str) -> None:
+        if self._consecutive_failures < CONSECUTIVE_FAILURES_FOR_REPAIR:
+            return
+        async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"persistent_failure_{self._entry.entry_id}",
+            is_fixable=False,
+            severity=IssueSeverity.ERROR,
+            translation_key="persistent_failure",
+            translation_placeholders={
+                "name": self._entry.title,
+                "error": error,
+                "count": str(self._consecutive_failures),
+            },
+        )
 
     def _make_metadata(self, stat_id: str) -> StatisticMetaData:
         utility = self._entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)

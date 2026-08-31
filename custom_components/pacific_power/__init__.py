@@ -1,9 +1,10 @@
-"""Pacific Power integration for Home Assistant."""
+"""Pacific Power / Rocky Mountain Power integration for Home Assistant."""
 
 from __future__ import annotations
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from .coordinator import PacificPowerConfigEntry, PacificPowerCoordinator
 
@@ -26,3 +27,12 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a Pacific Power config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    entry: PacificPowerConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow manual removal of a device via the UI."""
+    return True

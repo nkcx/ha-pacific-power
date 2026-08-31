@@ -66,16 +66,12 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
 
-            api = PacificPowerApi(
-                self._username, self._password, utility=self._utility
-            )
+            api = PacificPowerApi(self._username, self._password, utility=self._utility)
             try:
                 await api.async_start()
                 await api.async_login()
                 user = await api.async_get_user_info()
-                self._accounts = await api.async_get_accounts(
-                    user.get("webUserId", "")
-                )
+                self._accounts = await api.async_get_accounts(user.get("webUserId", ""))
             except PacificPowerAuthError:
                 errors["base"] = "invalid_auth"
             except PacificPowerConnectionError:
@@ -105,7 +101,10 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             selected = user_input["account"]
             for account in self._accounts:
-                label = f"{account.address} ({account.customer_idn}-{account.account_sequence})"
+                label = (
+                    f"{account.address}"
+                    f" ({account.customer_idn}-{account.account_sequence})"
+                )
                 if label == selected:
                     return await self._create_entry(account)
 
@@ -115,9 +114,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         ]
         return self.async_show_form(
             step_id="select_account",
-            data_schema=vol.Schema(
-                {vol.Required("account"): vol.In(labels)}
-            ),
+            data_schema=vol.Schema({vol.Required("account"): vol.In(labels)}),
         )
 
     async def _create_entry(self, account: AccountInfo) -> ConfigFlowResult:
@@ -139,18 +136,73 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Allow the user to update credentials for an existing entry."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+        current_utility = entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
+
+        if user_input is not None:
+            api = PacificPowerApi(
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
+                utility=current_utility,
+            )
+            try:
+                await api.async_start()
+                await api.async_login()
+                user = await api.async_get_user_info()
+                accounts = await api.async_get_accounts(user.get("webUserId", ""))
+            except PacificPowerAuthError:
+                errors["base"] = "invalid_auth"
+            except PacificPowerConnectionError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during reconfigure")
+                errors["base"] = "unknown"
+            else:
+                configured_idn = entry.data.get(CONF_CUSTOMER_IDN)
+                has_access = any(a.customer_idn == configured_idn for a in accounts)
+                if not has_access:
+                    errors["base"] = "invalid_auth"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data={
+                            **entry.data,
+                            CONF_USERNAME: user_input[CONF_USERNAME],
+                            CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        },
+                    )
+            finally:
+                await api.async_stop()
+
+        reconfigure_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USERNAME,
+                    default=entry.data.get(CONF_USERNAME, ""),
+                ): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=reconfigure_schema,
+            errors=errors,
+        )
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-        entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         current_utility = (
             entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
             if entry
@@ -167,9 +219,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
                 await api.async_start()
                 await api.async_login()
                 user = await api.async_get_user_info()
-                accounts = await api.async_get_accounts(
-                    user.get("webUserId", "")
-                )
+                accounts = await api.async_get_accounts(user.get("webUserId", ""))
             except PacificPowerAuthError:
                 errors["base"] = "invalid_auth"
             except PacificPowerConnectionError:
@@ -180,9 +230,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 if entry:
                     configured_idn = entry.data.get(CONF_CUSTOMER_IDN)
-                    has_access = any(
-                        a.customer_idn == configured_idn for a in accounts
-                    )
+                    has_access = any(a.customer_idn == configured_idn for a in accounts)
                     if not has_access:
                         errors["base"] = "invalid_auth"
                     else:
@@ -194,9 +242,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
                                 CONF_PASSWORD: user_input[CONF_PASSWORD],
                             },
                         )
-                        await self.hass.config_entries.async_reload(
-                            entry.entry_id
-                        )
+                        await self.hass.config_entries.async_reload(entry.entry_id)
                         return self.async_abort(reason="reauth_successful")
             finally:
                 await api.async_stop()

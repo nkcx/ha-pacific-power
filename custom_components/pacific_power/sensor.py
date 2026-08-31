@@ -60,9 +60,7 @@ async def async_setup_entry(
     """Set up Pacific Power sensors."""
     coordinator = entry.runtime_data
     data = coordinator.data
-    account_key = (
-        f"{data.account.customer_idn}_{data.account.account_sequence}"
-    )
+    account_key = f"{data.account.customer_idn}_{data.account.account_sequence}"
     utility = entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
     utility_name = UTILITY_DOMAINS[utility]["name"]
 
@@ -81,9 +79,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class PacificPowerSensor(
-    CoordinatorEntity[PacificPowerCoordinator], SensorEntity
-):
+class PacificPowerSensor(CoordinatorEntity[PacificPowerCoordinator], SensorEntity):
     """A diagnostic sensor for Pacific Power."""
 
     entity_description: PacificPowerSensorDescription

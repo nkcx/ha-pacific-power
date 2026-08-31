@@ -30,6 +30,17 @@
           "account": "Account"
         }
       },
+      "reconfigure": {
+        "title": "Update Credentials",
+        "data": {
+          "username": "Email / Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Your account login email",
+          "password": "Your account password"
+        }
+      },
       "reauth_confirm": {
         "title": "Re-authenticate",
         "data": {
@@ -37,6 +48,23 @@
           "password": "Password"
         }
       }
+    }
+  },
+  "issues": {
+    "persistent_failure": {
+      "title": "Unable to reach {name}",
+      "description": "The integration has failed to connect {count} times in a row. The last error was:\n\n> {error}\n\nThis may indicate a problem with your account credentials, that MFA was enabled on your account, or that PacifiCorp's portal is experiencing an extended outage. Check your credentials and try reloading the integration."
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Authentication failed: {error}"
+    },
+    "connection_failed": {
+      "message": "Failed to connect to the utility portal: {error}"
+    },
+    "api_error": {
+      "message": "Error communicating with the utility portal: {error}"
     }
   },
   "entity": {

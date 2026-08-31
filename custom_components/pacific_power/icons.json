@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "sensor": {
+      "last_data_received": {
+        "default": "mdi:calendar-clock"
+      },
+      "last_updated": {
+        "default": "mdi:update"
+      }
+    }
+  }
+}

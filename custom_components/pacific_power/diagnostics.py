@@ -31,9 +31,7 @@ async def async_get_config_entry_diagnostics(
         data = coordinator.data
         coordinator_data["account_0"] = {
             "last_data_received": (
-                data.last_data_received.isoformat()
-                if data.last_data_received
-                else None
+                data.last_data_received.isoformat() if data.last_data_received else None
             ),
             "last_updated": data.last_updated.isoformat(),
         }

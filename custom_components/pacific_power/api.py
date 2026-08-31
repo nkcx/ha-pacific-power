@@ -75,9 +75,7 @@ class HourlyUsage:
     kwh: float
 
 
-def _collect_cookies(
-    resp: aiohttp.ClientResponse, cookies: dict[str, str]
-) -> None:
+def _collect_cookies(resp: aiohttp.ClientResponse, cookies: dict[str, str]) -> None:
     for header_val in resp.headers.getall("Set-Cookie", []):
         parts = header_val.split(";")
         if parts:
@@ -188,9 +186,7 @@ class PacificPowerApi:
                         AccountInfo(
                             customer_idn=cid,
                             account_sequence=aseq,
-                            agreement_sequence=str(
-                                ma.get("agreementSequence", "")
-                            ),
+                            agreement_sequence=str(ma.get("agreementSequence", "")),
                             address=addr,
                             site_idn=ma.get("siteIDN", 0),
                             service_sequence=ma.get("serviceSequence", 0),
@@ -214,9 +210,7 @@ class PacificPowerApi:
                     }
                 },
             )
-            return data.get("getMeterTypeResponseBody", {}).get(
-                "isAMIMeter", False
-            )
+            return data.get("getMeterTypeResponseBody", {}).get("isAMIMeter", False)
         except PacificPowerApiError:
             return False
 
@@ -349,9 +343,7 @@ class PacificPowerApi:
         ) as resp:
             _collect_cookies(resp, self._cookies)
             if resp.status != 200:
-                raise PacificPowerConnectionError(
-                    f"Key exchange failed: {resp.status}"
-                )
+                raise PacificPowerConnectionError(f"Key exchange failed: {resp.status}")
             encrypted_aes = await resp.text()
 
         self._aes_key = enc_key.decrypt(
@@ -407,15 +399,12 @@ class PacificPowerApi:
             f"&password={quote(self._password, safe='')}"
         )
         async with self._session.post(
-            f"{self._login_url}{tenant_path}/SelfAsserted"
-            f"?tx={trans_id}&p={policy}",
+            f"{self._login_url}{tenant_path}/SelfAsserted?tx={trans_id}&p={policy}",
             data=body.encode("utf-8"),
             headers={
                 "X-CSRF-TOKEN": csrf,
                 "X-Requested-With": "XMLHttpRequest",
-                "Content-Type": (
-                    "application/x-www-form-urlencoded; charset=UTF-8"
-                ),
+                "Content-Type": ("application/x-www-form-urlencoded; charset=UTF-8"),
                 "Origin": self._login_url,
                 "Referer": final_url,
                 "Cookie": self._cookie_str(),
@@ -459,14 +448,11 @@ class PacificPowerApi:
             if body is not None
             else b"null"
         )
-        signature = self._sign_key.sign(
-            plaintext, padding.PKCS1v15(), hashes.SHA256()
-        )
+        signature = self._sign_key.sign(plaintext, padding.PKCS1v15(), hashes.SHA256())
         iv = os.urandom(12)
         ciphertext = AESGCM(self._aes_key).encrypt(iv, plaintext, None)
         encrypted_body = (
-            base64.b64encode(iv).decode()
-            + base64.b64encode(ciphertext).decode()
+            base64.b64encode(iv).decode() + base64.b64encode(ciphertext).decode()
         )
 
         async with self._session.post(
@@ -475,9 +461,7 @@ class PacificPowerApi:
             headers={
                 "Cookie": self._cookie_str(),
                 "X-XSRF-TOKEN": self._cookies.get("XSRF-TOKEN", ""),
-                "X-WCSSS-Content-Signature": base64.b64encode(
-                    signature
-                ).decode(),
+                "X-WCSSS-Content-Signature": base64.b64encode(signature).decode(),
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/plain, */*",
                 "Origin": self._base_url,
@@ -494,8 +478,10 @@ class PacificPowerApi:
                 raise PacificPowerApiError(f"Access denied: {path}")
             if resp.status == 400 and text:
                 try:
-                    msg = json.loads(text).get("fault", {}).get(
-                        "faultmessage", text[:200]
+                    msg = (
+                        json.loads(text)
+                        .get("fault", {})
+                        .get("faultmessage", text[:200])
                     )
                 except (json.JSONDecodeError, ValueError):
                     msg = text[:200]

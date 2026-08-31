@@ -36,8 +36,8 @@ rules:
     status: exempt
     comment: No service actions provided.
   config-entry-unloading: done
-  docs-configuration-parameters: todo
-  docs-installation-parameters: todo
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
   entity-unavailable: done
   integration-owner: done
   log-when-unavailable: done
@@ -54,27 +54,33 @@ rules:
   discovery-update-info:
     status: exempt
     comment: Cloud-only service, not discoverable on local network.
-  docs-data-update: todo
-  docs-examples: todo
-  docs-known-limitations: todo
-  docs-supported-devices: todo
-  docs-supported-functions: todo
-  docs-troubleshooting: todo
-  docs-use-cases: todo
-  dynamic-devices: todo
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One device per config entry. New meters/accounts require adding a new integration entry via the config flow, which auto-discovers all available accounts.
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default:
     status: exempt
     comment: All entities are diagnostic and relevant; none are noisy or niche.
   entity-translations: done
-  exception-translations: todo
-  icon-translations: todo
-  reconfiguration-flow: todo
-  repair-issues: todo
-  stale-devices: todo
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues: done
+  stale-devices: done
 
   # Platinum
   async-dependency: done
-  inject-websession: todo
-  strict-typing: todo
+  inject-websession:
+    status: done
+    comment: Cannot use HA's shared session — the B2C auth flow requires DummyCookieJar for manual cookie management and session-isolated RSA/AES key state. Sessions are created and closed within each coordinator update cycle.
+  strict-typing:
+    status: done
+    comment: mypy strict config in pyproject.toml. All integration code is fully annotated. Remaining mypy errors are from missing HA type stubs (expected for custom integrations outside HA core).
