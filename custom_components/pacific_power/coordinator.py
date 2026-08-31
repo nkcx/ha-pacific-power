@@ -174,10 +174,12 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         for reading in deduped.values():
             if reading.kwh < 0:
                 continue
+            # readTime is hour-ending: "01:00" covers 00:00-01:00, so
+            # the statistic period starts one hour earlier.
             hour = int(reading.time.split(":")[0])
             start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(
                 tzinfo=tz
-            ) + timedelta(hours=hour)
+            ) + timedelta(hours=hour - 1)
             normalized.append((start_dt, reading.kwh))
 
         return await self._async_insert_statistics(normalized)
@@ -204,11 +206,14 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             all_readings.extend(readings)
             cursor = month_end + timedelta(days=1)
 
+        # The API labels each day by usagePeriodEndDate, so the
+        # statistic period starts one day earlier.
         normalized = [
             (
                 datetime.strptime(reading.date, "%Y-%m-%d").replace(
                     tzinfo=tz
-                ),
+                )
+                - timedelta(days=1),
                 reading.kwh,
             )
             for reading in all_readings
