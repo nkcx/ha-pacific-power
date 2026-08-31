@@ -1,4 +1,4 @@
-"""Pacific Power API client.
+"""PacifiCorp (Pacific Power / Rocky Mountain Power) API client.
 
 Authenticates via Azure AD B2C, performs an RSA/AES key exchange with the
 portal's /idm/handshake endpoint, then makes encrypted API calls using
@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .const import BASE_URL, B2C_LOGIN_URL, PACIFICORP_SUBSIDIARY
+from .const import UTILITY_DOMAINS, UTILITY_PACIFIC_POWER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,11 +88,23 @@ def _collect_cookies(
 
 
 class PacificPowerApi:
-    """Client for Pacific Power's encrypted API."""
+    """Client for PacifiCorp's encrypted API."""
 
-    def __init__(self, username: str, password: str) -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        utility: str = UTILITY_PACIFIC_POWER,
+    ) -> None:
         self._username = username
         self._password = password
+
+        info = UTILITY_DOMAINS.get(utility, UTILITY_DOMAINS[UTILITY_PACIFIC_POWER])
+        self._base_url: str = info["base_url"]
+        self._login_url: str = info["login_url"]
+        self._subsidiary: str = info["subsidiary"]
+        self._policy: str = info["policy"]
+
         self._cookies: dict[str, str] = {}
         self._session: aiohttp.ClientSession | None = None
         self._sign_key: rsa.RSAPrivateKey | None = None
@@ -123,7 +135,7 @@ class PacificPowerApi:
             raise
         except aiohttp.ClientError as err:
             raise PacificPowerConnectionError(
-                "Failed to connect to Pacific Power"
+                "Failed to connect to utility portal"
             ) from err
 
     async def async_get_accounts(self, web_user_id: str) -> list[AccountInfo]:
@@ -133,7 +145,7 @@ class PacificPowerApi:
             {
                 "getAccountListRequestBody": {
                     "request": {"webUserID": web_user_id},
-                    "domain": {"pacifiCorpSubsidiary": PACIFICORP_SUBSIDIARY},
+                    "domain": {"pacifiCorpSubsidiary": self._subsidiary},
                 }
             },
         )
@@ -299,7 +311,7 @@ class PacificPowerApi:
 
     async def _load_idm(self) -> None:
         async with self._session.get(
-            f"{BASE_URL}/idm/login",
+            f"{self._base_url}/idm/login",
             allow_redirects=True,
             timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
@@ -326,7 +338,7 @@ class PacificPowerApi:
         ).decode()
 
         async with self._session.post(
-            f"{BASE_URL}/idm/handshake",
+            f"{self._base_url}/idm/handshake",
             data=f"{sign_pub}:{enc_pub}".encode(),
             headers={
                 "Cookie": self._cookie_str(),
@@ -352,7 +364,7 @@ class PacificPowerApi:
         )
 
     async def _b2c_login(self) -> None:
-        url = f"{BASE_URL}/oauth2/authorization/B2C_1A_PAC_SIGNIN"
+        url = f"{self._base_url}/oauth2/authorization/{self._policy}"
         for _ in range(10):
             async with self._session.get(
                 url,
@@ -395,7 +407,7 @@ class PacificPowerApi:
             f"&password={quote(self._password, safe='')}"
         )
         async with self._session.post(
-            f"{B2C_LOGIN_URL}{tenant_path}/SelfAsserted"
+            f"{self._login_url}{tenant_path}/SelfAsserted"
             f"?tx={trans_id}&p={policy}",
             data=body.encode("utf-8"),
             headers={
@@ -404,7 +416,7 @@ class PacificPowerApi:
                 "Content-Type": (
                     "application/x-www-form-urlencoded; charset=UTF-8"
                 ),
-                "Origin": B2C_LOGIN_URL,
+                "Origin": self._login_url,
                 "Referer": final_url,
                 "Cookie": self._cookie_str(),
             },
@@ -417,7 +429,7 @@ class PacificPowerApi:
                 raise PacificPowerAuthError("Invalid username or password")
 
         confirm_url = (
-            f"{B2C_LOGIN_URL}{tenant_path}"
+            f"{self._login_url}{tenant_path}"
             f"/api/CombinedSigninAndSignup/confirmed"
             f"?csrf_token={csrf}&tx={trans_id}&p={policy}"
         )
@@ -458,7 +470,7 @@ class PacificPowerApi:
         )
 
         async with self._session.post(
-            f"{BASE_URL}{path}",
+            f"{self._base_url}{path}",
             data=encrypted_body.encode("utf-8"),
             headers={
                 "Cookie": self._cookie_str(),
@@ -468,8 +480,8 @@ class PacificPowerApi:
                 ).decode(),
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/plain, */*",
-                "Origin": BASE_URL,
-                "Referer": f"{BASE_URL}/secure/my-account/energy-usage",
+                "Origin": self._base_url,
+                "Referer": f"{self._base_url}/secure/my-account/energy-usage",
             },
             timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:

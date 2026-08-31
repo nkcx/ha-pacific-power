@@ -5,21 +5,23 @@
       "reauth_successful": "Re-authentication was successful."
     },
     "error": {
-      "cannot_connect": "Unable to connect to Pacific Power. Please try again later.",
+      "cannot_connect": "Unable to connect. Please try again later.",
       "invalid_auth": "Invalid username or password.",
       "no_accounts": "No accounts found for this login.",
       "unknown": "An unexpected error occurred."
     },
     "step": {
       "user": {
-        "title": "Pacific Power Login",
+        "title": "PacifiCorp Login",
         "data": {
+          "utility": "Utility",
           "username": "Email / Username",
           "password": "Password"
         },
         "data_description": {
-          "username": "Your Pacific Power account login",
-          "password": "Your Pacific Power account password"
+          "utility": "Select your PacifiCorp utility brand",
+          "username": "Your account login email",
+          "password": "Your account password"
         }
       },
       "select_account": {
@@ -29,7 +31,7 @@
         }
       },
       "reauth_confirm": {
-        "title": "Re-authenticate with Pacific Power",
+        "title": "Re-authenticate",
         "data": {
           "username": "Email / Username",
           "password": "Password"

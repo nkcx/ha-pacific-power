@@ -41,7 +41,10 @@ from .const import (
     CONF_CUSTOMER_IDN,
     CONF_SERVICE_ADDRESS,
     CONF_TIMEZONE,
+    CONF_UTILITY,
     DOMAIN,
+    UTILITY_DOMAINS,
+    UTILITY_PACIFIC_POWER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -96,6 +99,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         api = PacificPowerApi(
             username=self._entry.data[CONF_USERNAME],
             password=self._entry.data[CONF_PASSWORD],
+            utility=self._entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER),
         )
         try:
             await api.async_start()
@@ -288,10 +292,12 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         return 0.0, now - timedelta(days=INITIAL_HISTORY_DAYS), None
 
     def _make_metadata(self, stat_id: str) -> StatisticMetaData:
+        utility = self._entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
+        utility_name = UTILITY_DOMAINS[utility]["name"]
         return StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
             has_sum=True,
-            name=f"Pacific Power {self._account.address}",
+            name=f"{utility_name} {self._account.address}",
             source=DOMAIN,
             statistic_id=stat_id,
             unit_class="energy",

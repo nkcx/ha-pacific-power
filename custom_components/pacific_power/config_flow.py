@@ -1,4 +1,4 @@
-"""Config flow for Pacific Power integration."""
+"""Config flow for Pacific Power / Rocky Mountain Power integration."""
 
 from __future__ import annotations
 
@@ -21,13 +21,23 @@ from .const import (
     CONF_CUSTOMER_IDN,
     CONF_SERVICE_ADDRESS,
     CONF_TIMEZONE,
+    CONF_UTILITY,
     DOMAIN,
+    UTILITY_DOMAINS,
+    UTILITY_PACIFIC_POWER,
+    UTILITY_ROCKY_MOUNTAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 CREDENTIALS_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_UTILITY, default=UTILITY_PACIFIC_POWER): vol.In(
+            {
+                UTILITY_PACIFIC_POWER: "Pacific Power",
+                UTILITY_ROCKY_MOUNTAIN: "Rocky Mountain Power",
+            }
+        ),
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): str,
     }
@@ -40,6 +50,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
+        self._utility: str = UTILITY_PACIFIC_POWER
         self._username: str = ""
         self._password: str = ""
         self._accounts: list[AccountInfo] = []
@@ -51,10 +62,13 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            self._utility = user_input[CONF_UTILITY]
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
 
-            api = PacificPowerApi(self._username, self._password)
+            api = PacificPowerApi(
+                self._username, self._password, utility=self._utility
+            )
             try:
                 await api.async_start()
                 await api.async_login()
@@ -110,9 +124,11 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         unique_id = f"{account.customer_idn}_{account.account_sequence}"
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
+        utility_name = UTILITY_DOMAINS[self._utility]["name"]
         return self.async_create_entry(
-            title=f"Pacific Power ({account.address})",
+            title=f"{utility_name} ({account.address})",
             data={
+                CONF_UTILITY: self._utility,
                 CONF_USERNAME: self._username,
                 CONF_PASSWORD: self._password,
                 CONF_CUSTOMER_IDN: account.customer_idn,
@@ -132,9 +148,20 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        current_utility = (
+            entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
+            if entry
+            else UTILITY_PACIFIC_POWER
+        )
+
         if user_input is not None:
             api = PacificPowerApi(
-                user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
+                utility=current_utility,
             )
             try:
                 await api.async_start()
@@ -151,9 +178,6 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during reauth")
                 errors["base"] = "unknown"
             else:
-                entry = self.hass.config_entries.async_get_entry(
-                    self.context["entry_id"]
-                )
                 if entry:
                     configured_idn = entry.data.get(CONF_CUSTOMER_IDN)
                     has_access = any(
@@ -177,8 +201,18 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
             finally:
                 await api.async_stop()
 
+        reauth_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USERNAME,
+                    default=entry.data.get(CONF_USERNAME, "") if entry else "",
+                ): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
+
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=CREDENTIALS_SCHEMA,
+            data_schema=reauth_schema,
             errors=errors,
         )
