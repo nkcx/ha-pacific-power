@@ -1,11 +1,13 @@
-# Pacific Power for Home Assistant
+# Pacific Power / Rocky Mountain Power for Home Assistant
 
-A [Home Assistant](https://www.home-assistant.io/) custom integration that imports daily energy usage data from [Pacific Power](https://www.pacificpower.net/) (PacifiCorp) into the HA Energy Dashboard.
+A [Home Assistant](https://www.home-assistant.io/) custom integration that imports daily energy usage data from [Pacific Power](https://www.pacificpower.net/) and [Rocky Mountain Power](https://www.rockymountainpower.net/) (both PacifiCorp subsidiaries) into the HA Energy Dashboard.
 
 ## Features
 
+- Supports both Pacific Power and Rocky Mountain Power
 - Automatic login and data fetch — no manual downloads
 - Daily kWh consumption data inserted into HA long-term statistics
+- Hourly data for AMI smart meters
 - Works with the Energy Dashboard out of the box
 - Auto-discovers accounts and metered agreements during setup
 - Refreshes every 12 hours
@@ -13,11 +15,11 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that impor
 
 ## How It Works
 
-Pacific Power's web portal encrypts all API traffic using RSA signatures and AES-256-GCM encryption. This integration reverse-engineers that protocol:
+PacifiCorp's web portals encrypt all API traffic using RSA signatures and AES-256-GCM encryption. This integration reverse-engineers that protocol:
 
-1. Authenticates via Azure AD B2C (Pacific Power's login provider)
+1. Authenticates via Azure AD B2C (PacifiCorp's login provider)
 2. Performs an RSA-4096 key exchange with the portal's `/idm/handshake` endpoint
-3. Makes encrypted, signed API calls to fetch daily energy usage data
+3. Makes encrypted, signed API calls to fetch energy usage data
 4. Inserts the data as external statistics in Home Assistant's recorder
 
 ## Installation
@@ -36,8 +38,9 @@ Copy `custom_components/pacific_power` to your HA `custom_components` folder and
 ## Setup
 
 1. **Settings** → **Devices & Services** → **Add Integration** → **Pacific Power**
-2. Enter your Pacific Power username and password
-3. Your account is auto-discovered — select it if you have multiple
+2. Select your utility — **Pacific Power** or **Rocky Mountain Power**
+3. Enter your username and password
+4. Your account is auto-discovered — select it if you have multiple
 
 ## Energy Dashboard
 
@@ -49,15 +52,15 @@ After the first data fetch:
 
 ## Requirements
 
-- A Pacific Power (PacifiCorp) account with online access
+- A Pacific Power or Rocky Mountain Power account with online access
 - MFA must be disabled on the account
 - `cryptography` Python package (installed automatically)
 
 ## Disclaimer
 
-This is an independent, community-developed project and is not affiliated with, endorsed by, or sponsored by Pacific Power, PacifiCorp, or Berkshire Hathaway Energy. "Pacific Power" and the Pacific Power logo are trademarks of PacifiCorp. Use of the name and logo is solely for identification purposes.
+This is an independent, community-developed project and is not affiliated with, endorsed by, or sponsored by Pacific Power, Rocky Mountain Power, PacifiCorp, or Berkshire Hathaway Energy. "Pacific Power" and "Rocky Mountain Power" are trademarks of PacifiCorp. Use of these names is solely for identification purposes.
 
-This integration accesses Pacific Power's web portal using your own account credentials. Use it at your own risk. The authors are not responsible for any issues arising from its use, including but not limited to account access problems or terms of service violations.
+This integration accesses PacifiCorp's web portals using your own account credentials. Use it at your own risk. The authors are not responsible for any issues arising from its use, including but not limited to account access problems or terms of service violations.
 
 ## License
 
