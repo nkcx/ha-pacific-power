@@ -56,6 +56,16 @@ After the first data fetch:
 - MFA must be disabled on the account
 - `cryptography` Python package (installed automatically)
 
+## Removal
+
+To remove the integration:
+
+1. **Settings** → **Devices & Services**
+2. Find your Pacific Power / Rocky Mountain Power entry
+3. Click the three-dot menu → **Delete**
+
+This removes the integration and its entities. Long-term statistics data already recorded in the HA database is preserved.
+
 ## Disclaimer
 
 This is an independent, community-developed project and is not affiliated with, endorsed by, or sponsored by Pacific Power, Rocky Mountain Power, PacifiCorp, or Berkshire Hathaway Energy. "Pacific Power" and "Rocky Mountain Power" are trademarks of PacifiCorp. Use of these names is solely for identification purposes.

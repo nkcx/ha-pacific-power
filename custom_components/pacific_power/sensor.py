@@ -17,12 +17,14 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONF_UTILITY, DOMAIN, UTILITY_DOMAINS, UTILITY_PACIFIC_POWER
 from .coordinator import (
     PacificPowerConfigEntry,
     PacificPowerCoordinator,
     PacificPowerData,
 )
+
+PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -61,6 +63,8 @@ async def async_setup_entry(
     account_key = (
         f"{data.account.customer_idn}_{data.account.account_sequence}"
     )
+    utility = entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
+    utility_name = UTILITY_DOMAINS[utility]["name"]
 
     entities: list[PacificPowerSensor] = []
     for description in SENSOR_DESCRIPTIONS:
@@ -70,6 +74,7 @@ async def async_setup_entry(
                 description=description,
                 account_key=account_key,
                 account_data=data,
+                utility_name=utility_name,
             )
         )
 
@@ -90,6 +95,7 @@ class PacificPowerSensor(
         description: PacificPowerSensorDescription,
         account_key: str,
         account_data: PacificPowerData,
+        utility_name: str,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
@@ -97,8 +103,8 @@ class PacificPowerSensor(
         self._attr_unique_id = f"{account_key}_{description.key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, account_key)},
-            name=f"Pacific Power {account_data.account.address}",
-            manufacturer="Pacific Power",
+            name=f"{utility_name} {account_data.account.address}",
+            manufacturer="PacifiCorp",
             model="Energy Usage",
             entry_type=DeviceEntryType.SERVICE,
         )
