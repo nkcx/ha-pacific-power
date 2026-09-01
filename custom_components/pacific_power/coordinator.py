@@ -259,13 +259,17 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             _LOGGER.debug("No daily usage data returned")
             return None
 
+        deduped: dict[str, DailyUsage] = {}
+        for reading in all_readings:
+            deduped[reading.date] = reading
+
         metadata = self._make_metadata(stat_id)
 
         running_sum = last_sum
         statistics: list[StatisticData] = []
         latest_dt: datetime | None = None
 
-        for reading in all_readings:
+        for reading in sorted(deduped.values(), key=lambda r: r.date):
             if reading.kwh < 0:
                 continue
             start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(tzinfo=tz)
