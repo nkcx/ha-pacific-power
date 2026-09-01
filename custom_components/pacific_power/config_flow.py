@@ -140,7 +140,7 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
         utility: str,
         errors: dict[str, str],
     ) -> list[AccountInfo] | None:
-        """Validate credentials and check account access. Returns accounts on success."""
+        """Validate credentials and check account access."""
         api = PacificPowerApi(username, password, utility=utility)
         try:
             await api.async_start()
