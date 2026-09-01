@@ -252,9 +252,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             get_last_statistics, self.hass, 1, stat_id, False, {"start"}
         )
         if last_stats and stat_id in last_stats:
-            last_ts = datetime.fromtimestamp(
-                last_stats[stat_id][0]["start"], tz=UTC
-            )
+            last_ts = datetime.fromtimestamp(last_stats[stat_id][0]["start"], tz=UTC)
             return last_ts - timedelta(days=overlap_days)
         return datetime.now(UTC) - timedelta(days=INITIAL_HISTORY_DAYS)
 
@@ -273,16 +271,12 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         statistics: list[StatisticData] = []
         for start_dt, kwh in readings:
             running_sum += kwh
-            statistics.append(
-                StatisticData(start=start_dt, state=kwh, sum=running_sum)
-            )
+            statistics.append(StatisticData(start=start_dt, state=kwh, sum=running_sum))
 
         async_add_external_statistics(
             self.hass, self._make_metadata(stat_id), statistics
         )
-        _LOGGER.debug(
-            "Inserted %d statistics for %s", len(statistics), stat_id
-        )
+        _LOGGER.debug("Inserted %d statistics for %s", len(statistics), stat_id)
         return readings[-1][0]
 
     async def _sum_before(self, stat_id: str, first_start: datetime) -> float:
@@ -304,9 +298,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
                 {"state", "sum"},
             ).get(stat_id)
             if rows and abs(rows[0]["start"] - first_start.timestamp()) < 1:
-                return (rows[0].get("sum") or 0.0) - (
-                    rows[0].get("state") or 0.0
-                )
+                return (rows[0].get("sum") or 0.0) - (rows[0].get("state") or 0.0)
 
             rows = statistics_during_period(
                 self.hass,
