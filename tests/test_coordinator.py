@@ -31,6 +31,7 @@ from .conftest import (
     mock_async_create_issue,
     mock_async_delete_issue,
     mock_get_last_statistics,
+    mock_statistics_during_period,
 )
 
 
@@ -132,6 +133,7 @@ class TestAsyncUpdateData:
         ]
         api = _make_mock_api(accounts=[mock_account], daily=daily)
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
 
         coord = _make_coordinator(mock_hass, mock_entry)
         with patch(
@@ -155,6 +157,7 @@ class TestAsyncUpdateData:
         mock_account.site_idn = 100
         api = _make_mock_api(accounts=[mock_account], is_ami=True, hourly=hourly)
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
 
         coord = _make_coordinator(mock_hass, mock_entry)
         with patch(
@@ -232,6 +235,7 @@ class TestAsyncUpdateData:
         )
         api = _make_mock_api(accounts=[fresh_account])
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
 
         coord = _make_coordinator(mock_hass, mock_entry)
         with patch(
@@ -288,6 +292,7 @@ class TestRepairIssues:
         coord = _make_coordinator(mock_hass, mock_entry)
         mock_async_delete_issue.reset_mock()
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
 
         api = _make_mock_api(accounts=[mock_account])
         with patch(
@@ -322,6 +327,7 @@ class TestFetchDaily:
     async def test_no_readings_returns_none(self, mock_hass, mock_entry):
         api = _make_mock_api()
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
         coord = _make_coordinator(mock_hass, mock_entry)
         result = await coord._fetch_daily(api)
         assert result is None
@@ -338,6 +344,7 @@ class TestFetchDaily:
             side_effect=[readings] + [[] for _ in range(12)]
         )
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
         mock_async_add_external_statistics.reset_mock()
 
         coord = _make_coordinator(mock_hass, mock_entry)
@@ -350,6 +357,49 @@ class TestFetchDaily:
         assert stats[0].state == 10.0
         assert stats[1].state == 15.0
         assert stats[1].sum == 25.0
+
+    @pytest.mark.asyncio
+    async def test_per_month_api_error_continues(self, mock_hass, mock_entry):
+        """A single month's API error should not discard other months."""
+        good_readings = [DailyUsage(date="2025-09-15", kwh=12.0)]
+        api = AsyncMock()
+        api.async_get_daily_usage = AsyncMock(
+            side_effect=[
+                PacificPowerApiError("server hiccup"),
+                good_readings,
+            ]
+            + [[] for _ in range(12)]
+        )
+        mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        result = await coord._fetch_daily(api)
+
+        assert result is not None
+        call_args = mock_async_add_external_statistics.call_args
+        stats = call_args[0][2]
+        assert len(stats) == 1
+        assert stats[0].state == 12.0
+
+    @pytest.mark.asyncio
+    async def test_shifts_dates_back_one_day(self, mock_hass, mock_entry):
+        """usagePeriodEndDate is period-ending, so stats shift back one day."""
+        readings = [DailyUsage(date="2025-08-02", kwh=10.0)]
+        api = AsyncMock()
+        api.async_get_daily_usage = AsyncMock(
+            side_effect=[readings] + [[] for _ in range(12)]
+        )
+        mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._fetch_daily(api)
+
+        stats = mock_async_add_external_statistics.call_args[0][2]
+        assert stats[0].start.day == 1
 
 
 # ---- _fetch_hourly ----
@@ -367,6 +417,7 @@ class TestFetchHourly:
             ]
         )
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
         mock_async_add_external_statistics.reset_mock()
 
         coord = _make_coordinator(mock_hass, mock_entry)
@@ -386,6 +437,7 @@ class TestFetchHourly:
         api = AsyncMock()
         api.async_get_hourly_usage = AsyncMock(side_effect=PacificPowerApiError("none"))
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
 
         coord = _make_coordinator(mock_hass, mock_entry)
         result = await coord._fetch_hourly(api)
@@ -402,6 +454,7 @@ class TestFetchHourly:
             ]
         )
         mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
         mock_async_add_external_statistics.reset_mock()
 
         coord = _make_coordinator(mock_hass, mock_entry)
@@ -412,6 +465,25 @@ class TestFetchHourly:
         assert len(stats) == 2
         assert stats[0].sum == 1.0
         assert stats[1].sum == 3.0
+
+    @pytest.mark.asyncio
+    async def test_shifts_times_back_one_hour(self, mock_hass, mock_entry):
+        """readTime is hour-ending, so stats shift back one hour."""
+        api = AsyncMock()
+        api.async_get_hourly_usage = AsyncMock(
+            return_value=[
+                HourlyUsage(date="2025-08-01", time="1:00", kwh=3.0),
+            ]
+        )
+        mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._fetch_hourly(api)
+
+        stats = mock_async_add_external_statistics.call_args[0][2]
+        assert stats[0].start.hour == 0
 
 
 # ---- _make_metadata ----
@@ -435,23 +507,62 @@ class TestMakeMetadata:
 # ---- _get_last_stat ----
 
 
-class TestGetLastStat:
+class TestFetchStart:
     @pytest.mark.asyncio
     async def test_no_existing_stats(self, mock_hass, mock_entry):
-        mock_hass.async_add_executor_job = AsyncMock(return_value={})
+        mock_get_last_statistics.return_value = {}
         coord = _make_coordinator(mock_hass, mock_entry)
-        last_sum, start, last_ts = await coord._get_last_stat("test_id")
-        assert last_sum == 0.0
-        assert last_ts is None
+        start = await coord._fetch_start(30)
         assert (datetime.now(UTC) - start).days <= INITIAL_HISTORY_DAYS + 1
 
     @pytest.mark.asyncio
     async def test_with_existing_stats(self, mock_hass, mock_entry):
         ts = datetime(2025, 8, 1, 12, 0, tzinfo=UTC).timestamp()
-        mock_hass.async_add_executor_job = AsyncMock(
-            return_value={"test_id": [{"start": ts, "sum": 150.5}]}
-        )
+        stat_id = "pacific_power:12345_001_energy_consumption"
+        mock_get_last_statistics.return_value = {
+            stat_id: [{"start": ts}]
+        }
         coord = _make_coordinator(mock_hass, mock_entry)
-        last_sum, start, last_ts = await coord._get_last_stat("test_id")
-        assert last_sum == 150.5
-        assert last_ts == datetime(2025, 8, 1, 12, 0, tzinfo=UTC)
+        start = await coord._fetch_start(30)
+        expected = datetime(2025, 8, 1, 12, 0, tzinfo=UTC) - timedelta(days=30)
+        assert start == expected
+        mock_get_last_statistics.return_value = {}
+
+
+class TestSumBefore:
+    @pytest.mark.asyncio
+    async def test_no_existing_stats(self, mock_hass, mock_entry):
+        mock_statistics_during_period.return_value = {}
+        coord = _make_coordinator(mock_hass, mock_entry)
+        result = await coord._sum_before("test_id", datetime(2025, 8, 1, tzinfo=UTC))
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_row_at_first_start(self, mock_hass, mock_entry):
+        first = datetime(2025, 8, 1, tzinfo=UTC)
+        mock_statistics_during_period.return_value = {
+            "test_id": [{"start": first.timestamp(), "sum": 100.0, "state": 5.0}]
+        }
+        coord = _make_coordinator(mock_hass, mock_entry)
+        result = await coord._sum_before("test_id", first)
+        assert result == 95.0
+        mock_statistics_during_period.return_value = {}
+
+    @pytest.mark.asyncio
+    async def test_row_before_first_start(self, mock_hass, mock_entry):
+        first = datetime(2025, 8, 10, tzinfo=UTC)
+        before = datetime(2025, 8, 9, tzinfo=UTC)
+        call_count = [0]
+
+        def _side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return {}
+            return {"test_id": [{"start": before.timestamp(), "sum": 80.0}]}
+
+        mock_statistics_during_period.side_effect = _side_effect
+        coord = _make_coordinator(mock_hass, mock_entry)
+        result = await coord._sum_before("test_id", first)
+        assert result == 80.0
+        mock_statistics_during_period.side_effect = None
+        mock_statistics_during_period.return_value = {}

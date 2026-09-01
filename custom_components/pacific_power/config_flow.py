@@ -135,7 +135,6 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _validate_and_update_credentials(
         self,
-        entry: Any,
         username: str,
         password: str,
         utility: str,
@@ -169,7 +168,6 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             accounts = await self._validate_and_update_credentials(
-                entry,
                 user_input[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
                 current_utility,
@@ -221,7 +219,6 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             accounts = await self._validate_and_update_credentials(
-                entry,
                 user_input[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
                 current_utility,

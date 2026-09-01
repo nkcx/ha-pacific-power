@@ -153,6 +153,7 @@ def _fake_redact(data, to_redact):
 # -- Global mocks we inspect in tests --
 mock_async_add_external_statistics = MagicMock()
 mock_get_last_statistics = MagicMock(return_value={})
+mock_statistics_during_period = MagicMock(return_value={})
 mock_async_create_issue = MagicMock()
 mock_async_delete_issue = MagicMock()
 
@@ -183,7 +184,8 @@ _mod("homeassistant.components.recorder.models",
      StatisticMetaData=_StatisticMetaData)
 _mod("homeassistant.components.recorder.statistics",
      async_add_external_statistics=mock_async_add_external_statistics,
-     get_last_statistics=mock_get_last_statistics)
+     get_last_statistics=mock_get_last_statistics,
+     statistics_during_period=mock_statistics_during_period)
 _mod("homeassistant.components.sensor",
      SensorDeviceClass=_SensorDeviceClass, SensorEntity=_SensorEntity,
      SensorEntityDescription=_SensorEntityDescription)
@@ -315,7 +317,11 @@ def mock_entry(mock_entry_data: dict) -> MagicMock:
 def mock_hass() -> MagicMock:
     hass = MagicMock()
     hass.config.time_zone = MOCK_TIMEZONE
-    hass.async_add_executor_job = AsyncMock(return_value={})
+
+    async def _run_executor(fn, *args):
+        return fn(*args)
+
+    hass.async_add_executor_job = AsyncMock(side_effect=_run_executor)
     hass.config_entries = MagicMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)

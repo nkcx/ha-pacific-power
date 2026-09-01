@@ -17,6 +17,7 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, UnitOfEnergy
@@ -173,10 +174,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
 
     async def _fetch_hourly(self, api: PacificPowerApi) -> datetime | None:
         """Fetch hour-by-hour data for AMI meters."""
-        stat_id = _make_stat_id(self._account)
-        last_sum, start, last_ts = await self._get_last_stat(
-            stat_id, OVERLAP_DAYS_HOURLY
-        )
+        start = await self._fetch_start(OVERLAP_DAYS_HOURLY)
 
         tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
         now = datetime.now(UTC)
@@ -191,55 +189,26 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
                 _LOGGER.debug("No hourly data for %s", cursor.date())
             cursor += timedelta(days=1)
 
-        if not all_readings:
-            _LOGGER.debug("No hourly usage data returned")
-            return None
-
         deduped: dict[tuple[str, str], HourlyUsage] = {}
         for reading in all_readings:
             deduped[(reading.date, reading.time)] = reading
 
-        metadata = self._make_metadata(stat_id)
-
-        running_sum = last_sum
-        statistics: list[StatisticData] = []
-        latest_dt: datetime | None = None
-
-        for reading in sorted(
-            deduped.values(),
-            key=lambda r: (r.date, int(r.time.split(":")[0])),
-        ):
+        normalized: list[tuple[datetime, float]] = []
+        for reading in deduped.values():
             if reading.kwh < 0:
                 continue
+            # readTime is hour-ending: "01:00" covers 00:00-01:00
             hour = int(reading.time.split(":")[0])
             start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(
                 tzinfo=tz
-            ) + timedelta(hours=hour)
-            running_sum += reading.kwh
-            statistics.append(
-                StatisticData(
-                    start=start_dt,
-                    state=reading.kwh,
-                    sum=running_sum,
-                )
-            )
-            if latest_dt is None or start_dt > latest_dt:
-                latest_dt = start_dt
+            ) + timedelta(hours=hour - 1)
+            normalized.append((start_dt, reading.kwh))
 
-        if statistics:
-            async_add_external_statistics(self.hass, metadata, statistics)
-            _LOGGER.debug(
-                "Inserted %d hourly statistics for %s",
-                len(statistics),
-                stat_id,
-            )
-
-        return latest_dt
+        return await self._insert_statistics(normalized)
 
     async def _fetch_daily(self, api: PacificPowerApi) -> datetime | None:
         """Fetch day-by-day data for non-AMI meters."""
-        stat_id = _make_stat_id(self._account)
-        last_sum, start, last_ts = await self._get_last_stat(stat_id)
+        start = await self._fetch_start(OVERLAP_DAYS_DAILY)
 
         tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
         now = datetime.now(UTC)
@@ -251,66 +220,108 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             ) - timedelta(days=1)
             if month_end > now:
                 month_end = now
-            readings = await api.async_get_daily_usage(self._account, cursor, month_end)
-            all_readings.extend(readings)
+            try:
+                readings = await api.async_get_daily_usage(
+                    self._account, cursor, month_end
+                )
+                all_readings.extend(readings)
+            except PacificPowerApiError:
+                _LOGGER.debug("No daily data for %s", cursor.strftime("%Y-%m"))
             cursor = month_end + timedelta(days=1)
-
-        if not all_readings:
-            _LOGGER.debug("No daily usage data returned")
-            return None
 
         deduped: dict[str, DailyUsage] = {}
         for reading in all_readings:
             deduped[reading.date] = reading
 
-        metadata = self._make_metadata(stat_id)
-
-        running_sum = last_sum
-        statistics: list[StatisticData] = []
-        latest_dt: datetime | None = None
-
-        for reading in sorted(deduped.values(), key=lambda r: r.date):
+        normalized: list[tuple[datetime, float]] = []
+        for reading in deduped.values():
             if reading.kwh < 0:
                 continue
-            start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(tzinfo=tz)
-            running_sum += reading.kwh
-            statistics.append(
-                StatisticData(
-                    start=start_dt,
-                    state=reading.kwh,
-                    sum=running_sum,
-                )
-            )
-            if latest_dt is None or start_dt > latest_dt:
-                latest_dt = start_dt
+            # usagePeriodEndDate is period-ending; shift back one day
+            start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(
+                tzinfo=tz
+            ) - timedelta(days=1)
+            normalized.append((start_dt, reading.kwh))
 
-        if statistics:
-            async_add_external_statistics(self.hass, metadata, statistics)
-            _LOGGER.debug(
-                "Inserted %d daily statistics for %s",
-                len(statistics),
-                stat_id,
-            )
+        return await self._insert_statistics(normalized)
 
-        return latest_dt
-
-    async def _get_last_stat(
-        self, stat_id: str, overlap_days: int = OVERLAP_DAYS_DAILY
-    ) -> tuple[float, datetime, datetime | None]:
-        """Get the last statistic sum and timestamp."""
+    async def _fetch_start(self, overlap_days: int) -> datetime:
+        """Return the datetime to start fetching from."""
+        stat_id = _make_stat_id(self._account)
         last_stats = await self.hass.async_add_executor_job(
-            get_last_statistics, self.hass, 1, stat_id, False, {"sum", "start"}
+            get_last_statistics, self.hass, 1, stat_id, False, {"start"}
         )
-
-        now = datetime.now(UTC)
         if last_stats and stat_id in last_stats:
-            last_stat = last_stats[stat_id][0]
-            last_ts = datetime.fromtimestamp(last_stat["start"], tz=UTC)
-            start = last_ts - timedelta(days=overlap_days)
-            last_sum = last_stat.get("sum", 0.0) or 0.0
-            return last_sum, start, last_ts
+            last_ts = datetime.fromtimestamp(
+                last_stats[stat_id][0]["start"], tz=UTC
+            )
+            return last_ts - timedelta(days=overlap_days)
+        return datetime.now(UTC) - timedelta(days=INITIAL_HISTORY_DAYS)
 
-        return 0.0, now - timedelta(days=INITIAL_HISTORY_DAYS), None
+    async def _insert_statistics(
+        self, readings: list[tuple[datetime, float]]
+    ) -> datetime | None:
+        """Build and insert statistics from normalized readings."""
+        if not readings:
+            _LOGGER.debug("No usage data returned")
+            return None
+
+        readings.sort(key=lambda r: r[0])
+        stat_id = _make_stat_id(self._account)
+        running_sum = await self._sum_before(stat_id, readings[0][0])
+
+        statistics: list[StatisticData] = []
+        for start_dt, kwh in readings:
+            running_sum += kwh
+            statistics.append(
+                StatisticData(start=start_dt, state=kwh, sum=running_sum)
+            )
+
+        async_add_external_statistics(
+            self.hass, self._make_metadata(stat_id), statistics
+        )
+        _LOGGER.debug(
+            "Inserted %d statistics for %s", len(statistics), stat_id
+        )
+        return readings[-1][0]
+
+    async def _sum_before(self, stat_id: str, first_start: datetime) -> float:
+        """Return the cumulative sum just before first_start.
+
+        Seeds the running sum from the row immediately preceding the
+        first re-inserted timestamp, not from the newest row — otherwise
+        the overlap window's usage would be double-counted on every refresh.
+        """
+
+        def _lookup() -> float:
+            rows = statistics_during_period(
+                self.hass,
+                first_start,
+                first_start + timedelta(hours=1),
+                {stat_id},
+                "hour",
+                None,
+                {"state", "sum"},
+            ).get(stat_id)
+            if rows and abs(rows[0]["start"] - first_start.timestamp()) < 1:
+                return (rows[0].get("sum") or 0.0) - (
+                    rows[0].get("state") or 0.0
+                )
+
+            rows = statistics_during_period(
+                self.hass,
+                first_start - timedelta(days=31),
+                first_start,
+                {stat_id},
+                "hour",
+                None,
+                {"sum"},
+            ).get(stat_id)
+            if rows:
+                return rows[-1].get("sum") or 0.0
+            return 0.0
+
+        return await self.hass.async_add_executor_job(_lookup)
 
     def _maybe_create_repair(self, error: str) -> None:
         if self._consecutive_failures < CONSECUTIVE_FAILURES_FOR_REPAIR:
