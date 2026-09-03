@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.pacific_power import (
     PLATFORMS,
+    _async_options_updated,
     async_remove_config_entry_device,
     async_setup_entry,
     async_unload_entry,
@@ -69,3 +70,28 @@ class TestAsyncRemoveConfigEntryDevice:
         device = MagicMock()
         result = await async_remove_config_entry_device(mock_hass, mock_entry, device)
         assert result is True
+
+
+class TestOptionsUpdateListener:
+    @pytest.mark.asyncio
+    async def test_setup_registers_listener_for_unload(self, mock_hass, mock_entry):
+        with patch(
+            "custom_components.pacific_power.PacificPowerCoordinator"
+        ) as mock_coord_cls:
+            coordinator = AsyncMock()
+            coordinator.async_config_entry_first_refresh = AsyncMock()
+            mock_coord_cls.return_value = coordinator
+
+            await async_setup_entry(mock_hass, mock_entry)
+
+        mock_entry.add_update_listener.assert_called_once_with(_async_options_updated)
+        mock_entry.async_on_unload.assert_called_once_with(
+            mock_entry.add_update_listener.return_value
+        )
+
+    @pytest.mark.asyncio
+    async def test_options_update_reloads_entry(self, mock_hass, mock_entry):
+        await _async_options_updated(mock_hass, mock_entry)
+        mock_hass.config_entries.async_reload.assert_awaited_once_with(
+            mock_entry.entry_id
+        )

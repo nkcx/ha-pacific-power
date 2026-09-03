@@ -15,6 +15,7 @@ from custom_components.pacific_power.api import (
     PacificPowerAuthError,
     PacificPowerConnectionError,
 )
+from custom_components.pacific_power.const import CONF_COST_PER_KWH
 from custom_components.pacific_power.coordinator import (
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     INITIAL_HISTORY_DAYS,
@@ -566,3 +567,89 @@ class TestSumBefore:
         assert result == 80.0
         mock_statistics_during_period.side_effect = None
         mock_statistics_during_period.return_value = {}
+
+
+# ---- Cost statistics ----
+
+
+class TestCostStatistics:
+    def test_make_stat_id_with_kind(self, mock_account):
+        assert _make_stat_id(mock_account, "energy_cost") == (
+            "pacific_power:12345_001_energy_cost"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_cost_stat_when_rate_unset(self, mock_hass, mock_entry):
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._insert_statistics([(datetime(2025, 8, 1, tzinfo=UTC), 10.0)])
+
+        assert mock_async_add_external_statistics.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_no_cost_stat_when_rate_zero(self, mock_hass, mock_entry):
+        mock_entry.options = {CONF_COST_PER_KWH: 0}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._insert_statistics([(datetime(2025, 8, 1, tzinfo=UTC), 10.0)])
+
+        assert mock_async_add_external_statistics.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cost_stat_inserted_when_rate_set(self, mock_hass, mock_entry):
+        mock_entry.options = {CONF_COST_PER_KWH: 0.25}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._insert_statistics(
+            [
+                (datetime(2025, 8, 1, 0, tzinfo=UTC), 10.0),
+                (datetime(2025, 8, 1, 1, tzinfo=UTC), 4.0),
+            ]
+        )
+
+        assert mock_async_add_external_statistics.call_count == 2
+        calls = mock_async_add_external_statistics.call_args_list
+        usage_meta, usage_stats = calls[0][0][1], calls[0][0][2]
+        cost_meta, cost_stats = calls[1][0][1], calls[1][0][2]
+
+        assert usage_meta.statistic_id == "pacific_power:12345_001_energy_consumption"
+        assert cost_meta.statistic_id == "pacific_power:12345_001_energy_cost"
+        assert cost_meta.name == "Pacific Power 123 Main St Cost"
+        assert cost_meta.has_sum is True
+        assert cost_meta.unit_of_measurement is None
+        assert [s.state for s in cost_stats] == [2.5, 1.0]
+        assert [s.sum for s in cost_stats] == [2.5, 3.5]
+        assert [s.start for s in cost_stats] == [s.start for s in usage_stats]
+
+    @pytest.mark.asyncio
+    async def test_cost_sum_seeded_from_its_own_series(self, mock_hass, mock_entry):
+        """The cost sum continues the cost statistic, not the kWh one."""
+        mock_entry.options = {CONF_COST_PER_KWH: 0.5}
+        first = datetime(2025, 8, 1, tzinfo=UTC)
+
+        def _lookup(hass, start, end, stat_ids, *args):
+            stat_id = next(iter(stat_ids))
+            if stat_id.endswith("_energy_cost"):
+                row = {"start": first.timestamp(), "sum": 50.0, "state": 5.0}
+            else:
+                row = {"start": first.timestamp(), "sum": 100.0, "state": 10.0}
+            return {stat_id: [row]}
+
+        mock_statistics_during_period.side_effect = _lookup
+        mock_async_add_external_statistics.reset_mock()
+
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._insert_statistics([(first, 10.0)])
+
+        mock_statistics_during_period.side_effect = None
+        mock_statistics_during_period.return_value = {}
+
+        calls = mock_async_add_external_statistics.call_args_list
+        assert calls[0][0][2][0].sum == 100.0  # (100 - 10) + 10
+        assert calls[1][0][2][0].sum == 50.0  # (50 - 5) + 10 * 0.5

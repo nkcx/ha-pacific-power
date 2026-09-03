@@ -4,6 +4,7 @@ from typing import Final
 
 DOMAIN: Final = "pacific_power"
 
+CONF_COST_PER_KWH = "cost_per_kwh"
 CONF_CUSTOMER_IDN = "customer_idn"
 CONF_ACCOUNT_SEQUENCE = "account_sequence"
 CONF_AGREEMENT_SEQUENCE = "agreement_sequence"
