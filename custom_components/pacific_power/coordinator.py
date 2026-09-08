@@ -44,6 +44,7 @@ from .api import (
 from .const import (
     CONF_ACCOUNT_SEQUENCE,
     CONF_AGREEMENT_SEQUENCE,
+    CONF_COST_PER_KWH,
     CONF_CUSTOMER_IDN,
     CONF_SERVICE_ADDRESS,
     CONF_TIMEZONE,
@@ -79,9 +80,9 @@ def _slugify(value: str) -> str:
     return _STAT_ID_RE.sub("_", value.lower()).strip("_")
 
 
-def _make_stat_id(account: AccountInfo) -> str:
+def _make_stat_id(account: AccountInfo, kind: str = "energy_consumption") -> str:
     slug = _slugify(f"{account.customer_idn}_{account.account_sequence}")
-    return f"{DOMAIN}:{slug}_energy_consumption"
+    return f"{DOMAIN}:{slug}_{kind}"
 
 
 class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
@@ -259,14 +260,16 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
     async def _insert_statistics(
         self, readings: list[tuple[datetime, float]]
     ) -> datetime | None:
-        """Build and insert statistics from normalized readings."""
+        """Build and insert usage (and optional cost) statistics from readings."""
         if not readings:
             _LOGGER.debug("No usage data returned")
             return None
 
         readings.sort(key=lambda r: r[0])
+        first_start = readings[0][0]
+
         stat_id = _make_stat_id(self._account)
-        running_sum = await self._sum_before(stat_id, readings[0][0])
+        running_sum = await self._sum_before(stat_id, first_start)
 
         statistics: list[StatisticData] = []
         for start_dt, kwh in readings:
@@ -277,6 +280,25 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             self.hass, self._make_metadata(stat_id), statistics
         )
         _LOGGER.debug("Inserted %d statistics for %s", len(statistics), stat_id)
+
+        rate = float(self._entry.options.get(CONF_COST_PER_KWH, 0) or 0)
+        if rate > 0:
+            cost_id = _make_stat_id(self._account, "energy_cost")
+            cost_sum = await self._sum_before(cost_id, first_start)
+            cost_statistics: list[StatisticData] = []
+            for start_dt, kwh in readings:
+                cost = kwh * rate
+                cost_sum += cost
+                cost_statistics.append(
+                    StatisticData(start=start_dt, state=cost, sum=cost_sum)
+                )
+            async_add_external_statistics(
+                self.hass, self._make_cost_metadata(cost_id), cost_statistics
+            )
+            _LOGGER.debug(
+                "Inserted %d statistics for %s", len(cost_statistics), cost_id
+            )
+
         return readings[-1][0]
 
     async def _sum_before(self, stat_id: str, first_start: datetime) -> float:
@@ -343,4 +365,17 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             statistic_id=stat_id,
             unit_class="energy",
             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        )
+
+    def _make_cost_metadata(self, stat_id: str) -> StatisticMetaData:
+        utility = self._entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
+        utility_name = UTILITY_DOMAINS[utility]["name"]
+        return StatisticMetaData(
+            mean_type=StatisticMeanType.NONE,
+            has_sum=True,
+            name=f"{utility_name} {self._account.address} Cost",
+            source=DOMAIN,
+            statistic_id=stat_id,
+            unit_class=None,
+            unit_of_measurement=None,
         )

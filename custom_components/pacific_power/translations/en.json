@@ -50,6 +50,19 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "cost_per_kwh": "Cost per kWh"
+        },
+        "data_description": {
+          "cost_per_kwh": "Your marginal electricity rate (currency per kWh), used to generate a cost statistic for the Energy dashboard. Set to 0 to disable cost tracking."
+        }
+      }
+    }
+  },
   "issues": {
     "persistent_failure": {
       "title": "Unable to reach {name}",

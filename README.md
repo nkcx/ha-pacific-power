@@ -56,6 +56,18 @@ Copy `custom_components/pacific_power` to your HA `custom_components` folder and
 - Multi-factor authentication (MFA) **must be disabled** on the account — the integration cannot handle MFA challenges
 - The `cryptography` Python package (installed automatically by HA)
 
+### Options
+
+After setup, **Configure** on the integration card exposes one option:
+
+| Option | Description |
+|--------|-------------|
+| **Cost per kWh** | Your marginal electricity rate (currency per kWh). When non-zero, each refresh also inserts a `pacific_power:..._energy_cost` statistic (kWh × rate, cumulative) that the Energy Dashboard can use for grid consumption costs. Set to 0 (the default) to disable. |
+
+The portal does expose a per-day dollar figure, but it is rounded to whole dollars and is itself an estimate derived from the previous month's bill, so a configured marginal rate produces better data at hourly granularity.
+
+Changing the rate reloads the integration. Readings inserted from then on use the new rate, while rows older than the overlap re-fetch window keep the cost computed when they were inserted. Setting the rate back to 0 stops adding cost rows but leaves existing ones in place.
+
 ## What You Get
 
 ### Energy Statistics
@@ -66,6 +78,8 @@ The integration creates a long-term statistic (`pacific_power:..._energy_consump
 - **Non-AMI meters** — daily readings with per-day kWh totals
 
 The meter type is auto-detected. If your meter supports hourly data, the integration will use it automatically.
+
+With **Cost per kWh** configured (see [Options](#options)), a companion `pacific_power:..._energy_cost` statistic tracks cumulative cost over the same periods.
 
 ### Diagnostic Sensors
 
@@ -83,6 +97,7 @@ After the first data fetch:
 1. **Settings** → **Dashboards** → **Energy**
 2. **Grid consumption** → **Add consumption**
 3. Select the `pacific_power:...energy_consumption` statistic
+4. *(Optional)* If you configured **Cost per kWh**, choose **Use an entity tracking the total costs** and select the `pacific_power:..._energy_cost` statistic
 
 ## Data Updates
 

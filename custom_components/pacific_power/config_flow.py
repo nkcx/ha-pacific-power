@@ -6,8 +6,14 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 
 from .api import (
     AccountInfo,
@@ -18,6 +24,7 @@ from .api import (
 from .const import (
     CONF_ACCOUNT_SEQUENCE,
     CONF_AGREEMENT_SEQUENCE,
+    CONF_COST_PER_KWH,
     CONF_CUSTOMER_IDN,
     CONF_SERVICE_ADDRESS,
     CONF_TIMEZONE,
@@ -52,6 +59,14 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Pacific Power."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> PacificPowerOptionsFlow:
+        """Create the options flow."""
+        return PacificPowerOptionsFlow()
 
     def __init__(self) -> None:
         self._utility: str = UTILITY_PACIFIC_POWER
@@ -255,4 +270,27 @@ class PacificPowerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reauth_confirm",
             data_schema=reauth_schema,
             errors=errors,
+        )
+
+
+class PacificPowerOptionsFlow(OptionsFlow):
+    """Handle Pacific Power options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the cost tracking options."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_COST_PER_KWH,
+                        default=self.config_entry.options.get(CONF_COST_PER_KWH, 0.0),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                }
+            ),
         )

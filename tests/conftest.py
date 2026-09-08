@@ -76,6 +76,10 @@ class _ConfigFlow:
         super().__init_subclass__(**kw)
 
 
+class _OptionsFlow:
+    pass
+
+
 class _ConfigEntry:
     def __class_getitem__(cls, item):
         return cls
@@ -162,14 +166,14 @@ mock_async_delete_issue = MagicMock()
 
 # homeassistant core
 _mod("homeassistant")
-_mod("homeassistant.core", HomeAssistant=MagicMock)
+_mod("homeassistant.core", HomeAssistant=MagicMock, callback=lambda f: f)
 _mod("homeassistant.const",
      CONF_PASSWORD="password", CONF_USERNAME="username",
      Platform=_Platform, UnitOfEnergy=_UnitOfEnergy,
      EntityCategory=_EntityCategory)
 _mod("homeassistant.config_entries",
      ConfigEntry=_ConfigEntry, ConfigFlow=_ConfigFlow,
-     ConfigFlowResult=dict)
+     ConfigFlowResult=dict, OptionsFlow=_OptionsFlow)
 _mod("homeassistant.data_entry_flow")
 _mod("homeassistant.exceptions",
      ConfigEntryAuthFailed=_ConfigEntryAuthFailed,
@@ -302,6 +306,7 @@ def mock_entry_data(mock_account: AccountInfo) -> dict:
 def mock_entry(mock_entry_data: dict) -> MagicMock:
     entry = MagicMock()
     entry.data = mock_entry_data
+    entry.options = {}
     entry.entry_id = "test_entry_id_123"
     entry.title = "Pacific Power (123 Main St)"
     entry.as_dict.return_value = {

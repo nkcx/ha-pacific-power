@@ -5,16 +5,21 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import voluptuous as vol
 
 from custom_components.pacific_power.api import (
     AccountInfo,
     PacificPowerAuthError,
     PacificPowerConnectionError,
 )
-from custom_components.pacific_power.config_flow import PacificPowerConfigFlow
+from custom_components.pacific_power.config_flow import (
+    PacificPowerConfigFlow,
+    PacificPowerOptionsFlow,
+)
 from custom_components.pacific_power.const import (
     CONF_ACCOUNT_SEQUENCE,
     CONF_AGREEMENT_SEQUENCE,
+    CONF_COST_PER_KWH,
     CONF_CUSTOMER_IDN,
     CONF_SERVICE_ADDRESS,
     CONF_TIMEZONE,
@@ -583,3 +588,59 @@ class TestAsyncStepReauth:
         for key in schema_dict:
             if hasattr(key, "default") and str(key) == "username":
                 assert key.default() == MOCK_USERNAME
+
+
+# ---- Options flow ----
+
+
+def _make_options_flow(entry: MagicMock) -> PacificPowerOptionsFlow:
+    flow = PacificPowerOptionsFlow()
+    flow.config_entry = entry
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    return flow
+
+
+class TestOptionsFlow:
+    def test_config_flow_provides_options_flow(self, mock_entry: MagicMock) -> None:
+        flow = PacificPowerConfigFlow.async_get_options_flow(mock_entry)
+        assert isinstance(flow, PacificPowerOptionsFlow)
+
+    @pytest.mark.asyncio
+    async def test_show_form_defaults_to_zero(self, mock_entry: MagicMock) -> None:
+        flow = _make_options_flow(mock_entry)
+        result = await flow.async_step_init()
+
+        assert result == {"type": "form"}
+        assert flow.async_show_form.call_args[1]["step_id"] == "init"
+        schema = flow.async_show_form.call_args[1]["data_schema"]
+        assert schema({}) == {CONF_COST_PER_KWH: 0.0}
+
+    @pytest.mark.asyncio
+    async def test_show_form_prefills_current_rate(self, mock_entry: MagicMock) -> None:
+        mock_entry.options = {CONF_COST_PER_KWH: 0.12}
+        flow = _make_options_flow(mock_entry)
+        await flow.async_step_init()
+
+        schema = flow.async_show_form.call_args[1]["data_schema"]
+        assert schema({}) == {CONF_COST_PER_KWH: 0.12}
+
+    @pytest.mark.asyncio
+    async def test_schema_coerces_and_rejects_negative(
+        self, mock_entry: MagicMock
+    ) -> None:
+        flow = _make_options_flow(mock_entry)
+        await flow.async_step_init()
+        schema = flow.async_show_form.call_args[1]["data_schema"]
+
+        assert schema({CONF_COST_PER_KWH: "0.2"}) == {CONF_COST_PER_KWH: 0.2}
+        with pytest.raises(vol.Invalid):
+            schema({CONF_COST_PER_KWH: -1})
+
+    @pytest.mark.asyncio
+    async def test_submit_creates_entry(self, mock_entry: MagicMock) -> None:
+        flow = _make_options_flow(mock_entry)
+        result = await flow.async_step_init({CONF_COST_PER_KWH: 0.15})
+
+        assert result == {"type": "create_entry"}
+        flow.async_create_entry.assert_called_once_with(data={CONF_COST_PER_KWH: 0.15})
