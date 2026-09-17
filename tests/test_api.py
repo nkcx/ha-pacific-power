@@ -108,7 +108,7 @@ class TestConstructor:
         assert api._base_url == UTILITY_DOMAINS[UTILITY_ROCKY_MOUNTAIN]["base_url"]
         assert api._login_url == UTILITY_DOMAINS[UTILITY_ROCKY_MOUNTAIN]["login_url"]
         assert api._subsidiary == "RockyMountainPower"
-        assert api._policy == "B2C_1A_RMP_SIGNIN"
+        assert api._policy == "B2C_1A_PAC_SIGNIN"
 
     def test_unknown_utility_falls_back_to_pacific_power(self) -> None:
         api = PacificPowerApi("u", "p", utility="nonexistent")

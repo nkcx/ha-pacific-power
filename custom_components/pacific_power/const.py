@@ -28,6 +28,6 @@ UTILITY_DOMAINS = {
         "base_url": "https://csapps.rockymountainpower.net",
         "login_url": "https://login.csapps.rockymountainpower.net",
         "subsidiary": "RockyMountainPower",
-        "policy": "B2C_1A_RMP_SIGNIN",
+        "policy": "B2C_1A_PAC_SIGNIN",
     },
 }
