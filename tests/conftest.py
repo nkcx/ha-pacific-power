@@ -182,7 +182,8 @@ _mod("homeassistant.exceptions",
 
 # homeassistant.components
 _mod("homeassistant.components")
-_mod("homeassistant.components.recorder")
+# Recorder instance stub: its executor delegates to hass.async_add_executor_job
+_mod("homeassistant.components.recorder", get_instance=lambda hass: hass)
 _mod("homeassistant.components.recorder.models",
      StatisticData=_StatisticData, StatisticMeanType=_StatisticMeanType,
      StatisticMetaData=_StatisticMetaData)

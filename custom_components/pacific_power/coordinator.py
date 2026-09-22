@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
     StatisticData,
     StatisticMeanType,
@@ -249,7 +250,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
     async def _fetch_start(self, overlap_days: int) -> datetime:
         """Return the datetime to start fetching from."""
         stat_id = _make_stat_id(self._account)
-        last_stats = await self.hass.async_add_executor_job(
+        last_stats = await get_instance(self.hass).async_add_executor_job(
             get_last_statistics, self.hass, 1, stat_id, False, {"start"}
         )
         if last_stats and stat_id in last_stats:
@@ -335,7 +336,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
                 return rows[-1].get("sum") or 0.0
             return 0.0
 
-        return await self.hass.async_add_executor_job(_lookup)
+        return await get_instance(self.hass).async_add_executor_job(_lookup)
 
     def _maybe_create_repair(self, error: str) -> None:
         if self._consecutive_failures < CONSECUTIVE_FAILURES_FOR_REPAIR:
