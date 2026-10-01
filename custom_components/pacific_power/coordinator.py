@@ -257,18 +257,23 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         return list(deduped.values())
 
     def _normalize_daily(
-        self, values: list[tuple[str, float]]
+        self, values: list[tuple[str, float]], *, period_ending: bool = True
     ) -> list[tuple[datetime, float]]:
-        """Convert (usagePeriodEndDate, kWh) pairs to (period start, kWh)."""
+        """Convert (usagePeriodEndDate, kWh) pairs to (day start, kWh).
+
+        With period_ending, the date is the day after the usage and shifts
+        back one day (consumption). Otherwise the date is the day itself
+        (export, which matches the portal's labels).
+        """
         tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
+        shift = timedelta(days=1) if period_ending else timedelta(0)
         normalized: list[tuple[datetime, float]] = []
         for date_str, kwh in values:
             if kwh < 0:
                 continue
-            # usagePeriodEndDate is period-ending; shift back one day
-            start_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(
-                tzinfo=tz
-            ) - timedelta(days=1)
+            start_dt = (
+                datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=tz) - shift
+            )
             normalized.append((start_dt, kwh))
         return normalized
 
@@ -316,7 +321,8 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         are inserted like any other reading.
         """
         readings = self._normalize_daily(
-            [(r.date, r.returned_kwh) for r in daily if r.returned_kwh is not None]
+            [(r.date, r.returned_kwh) for r in daily if r.returned_kwh is not None],
+            period_ending=False,
         )
         if not readings:
             return
@@ -337,7 +343,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         self, metadata: StatisticMetaData, readings: list[tuple[datetime, float]]
     ) -> None:
         """Insert sorted (start, value) readings as a cumulative-sum statistic."""
-        stat_id = metadata.statistic_id
+        stat_id = metadata["statistic_id"]
         running_sum = await self._sum_before(stat_id, readings[0][0])
 
         statistics: list[StatisticData] = []

@@ -125,17 +125,9 @@ class _StatisticMeanType:
     NONE = "none"
 
 
-class _StatisticData:
-    def __init__(self, *, start, state, sum):
-        self.start = start
-        self.state = state
-        self.sum = sum
-
-
-class _StatisticMetaData:
-    def __init__(self, **kw):
-        for k, v in kw.items():
-            setattr(self, k, v)
+# HA defines these as TypedDicts, so instances are plain dicts
+_StatisticData = dict
+_StatisticMetaData = dict
 
 
 class _IssueSeverity:

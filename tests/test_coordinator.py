@@ -355,9 +355,9 @@ class TestFetchDaily:
         call_args = mock_async_add_external_statistics.call_args
         stats = call_args[0][2]
         assert len(stats) == 2
-        assert stats[0].state == 10.0
-        assert stats[1].state == 15.0
-        assert stats[1].sum == 25.0
+        assert stats[0]["state"] == 10.0
+        assert stats[1]["state"] == 15.0
+        assert stats[1]["sum"] == 25.0
 
     @pytest.mark.asyncio
     async def test_per_month_api_error_continues(self, mock_hass, mock_entry):
@@ -382,7 +382,7 @@ class TestFetchDaily:
         call_args = mock_async_add_external_statistics.call_args
         stats = call_args[0][2]
         assert len(stats) == 1
-        assert stats[0].state == 12.0
+        assert stats[0]["state"] == 12.0
 
     @pytest.mark.asyncio
     async def test_shifts_dates_back_one_day(self, mock_hass, mock_entry):
@@ -400,7 +400,7 @@ class TestFetchDaily:
         await coord._fetch_daily(api)
 
         stats = mock_async_add_external_statistics.call_args[0][2]
-        assert stats[0].start.day == 1
+        assert stats[0]["start"].day == 1
 
 
 # ---- _fetch_hourly ----
@@ -428,10 +428,10 @@ class TestFetchHourly:
         call_args = mock_async_add_external_statistics.call_args
         stats = call_args[0][2]
         assert len(stats) == 2
-        assert stats[0].state == 1.5
-        assert stats[0].sum == 1.5
-        assert stats[1].state == 2.0
-        assert stats[1].sum == 3.5
+        assert stats[0]["state"] == 1.5
+        assert stats[0]["sum"] == 1.5
+        assert stats[1]["state"] == 2.0
+        assert stats[1]["sum"] == 3.5
 
     @pytest.mark.asyncio
     async def test_no_readings_returns_none(self, mock_hass, mock_entry):
@@ -464,8 +464,8 @@ class TestFetchHourly:
         call_args = mock_async_add_external_statistics.call_args
         stats = call_args[0][2]
         assert len(stats) == 2
-        assert stats[0].sum == 1.0
-        assert stats[1].sum == 3.0
+        assert stats[0]["sum"] == 1.0
+        assert stats[1]["sum"] == 3.0
 
     @pytest.mark.asyncio
     async def test_shifts_times_back_one_hour(self, mock_hass, mock_entry):
@@ -484,7 +484,7 @@ class TestFetchHourly:
         await coord._fetch_hourly(api)
 
         stats = mock_async_add_external_statistics.call_args[0][2]
-        assert stats[0].start.hour == 0
+        assert stats[0]["start"].hour == 0
 
 
 # ---- _make_metadata ----
@@ -494,15 +494,15 @@ class TestMakeMetadata:
     def test_pacific_power(self, mock_hass, mock_entry):
         coord = _make_coordinator(mock_hass, mock_entry)
         meta = coord._make_metadata("pacific_power:test_stat")
-        assert meta.name == "Pacific Power 123 Main St"
-        assert meta.statistic_id == "pacific_power:test_stat"
-        assert meta.unit_of_measurement == "kWh"
+        assert meta["name"] == "Pacific Power 123 Main St"
+        assert meta["statistic_id"] == "pacific_power:test_stat"
+        assert meta["unit_of_measurement"] == "kWh"
 
     def test_rocky_mountain(self, mock_hass, mock_entry):
         mock_entry.data["utility"] = "rocky_mountain_power"
         coord = _make_coordinator(mock_hass, mock_entry)
         meta = coord._make_metadata("pacific_power:test_stat")
-        assert meta.name == "Rocky Mountain Power 123 Main St"
+        assert meta["name"] == "Rocky Mountain Power 123 Main St"
 
 
 # ---- _get_last_stat ----
@@ -618,14 +618,16 @@ class TestCostStatistics:
         usage_meta, usage_stats = calls[0][0][1], calls[0][0][2]
         cost_meta, cost_stats = calls[1][0][1], calls[1][0][2]
 
-        assert usage_meta.statistic_id == "pacific_power:12345_001_energy_consumption"
-        assert cost_meta.statistic_id == "pacific_power:12345_001_energy_cost"
-        assert cost_meta.name == "Pacific Power 123 Main St Cost"
-        assert cost_meta.has_sum is True
-        assert cost_meta.unit_of_measurement is None
-        assert [s.state for s in cost_stats] == [2.5, 1.0]
-        assert [s.sum for s in cost_stats] == [2.5, 3.5]
-        assert [s.start for s in cost_stats] == [s.start for s in usage_stats]
+        assert (
+            usage_meta["statistic_id"] == "pacific_power:12345_001_energy_consumption"
+        )
+        assert cost_meta["statistic_id"] == "pacific_power:12345_001_energy_cost"
+        assert cost_meta["name"] == "Pacific Power 123 Main St Cost"
+        assert cost_meta["has_sum"] is True
+        assert cost_meta["unit_of_measurement"] is None
+        assert [s["state"] for s in cost_stats] == [2.5, 1.0]
+        assert [s["sum"] for s in cost_stats] == [2.5, 3.5]
+        assert [s["start"] for s in cost_stats] == [s["start"] for s in usage_stats]
 
     @pytest.mark.asyncio
     async def test_cost_sum_seeded_from_its_own_series(self, mock_hass, mock_entry):
@@ -651,8 +653,8 @@ class TestCostStatistics:
         mock_statistics_during_period.return_value = {}
 
         calls = mock_async_add_external_statistics.call_args_list
-        assert calls[0][0][2][0].sum == 100.0  # (100 - 10) + 10
-        assert calls[1][0][2][0].sum == 50.0  # (50 - 5) + 10 * 0.5
+        assert calls[0][0][2][0]["sum"] == 100.0  # (100 - 10) + 10
+        assert calls[1][0][2][0]["sum"] == 50.0  # (50 - 5) + 10 * 0.5
 
 
 # ---- Grid return statistics ----
@@ -665,7 +667,7 @@ def _returned_calls():
     return [
         c[0]
         for c in mock_async_add_external_statistics.call_args_list
-        if c[0][1].statistic_id == RETURNED_ID
+        if c[0][1]["statistic_id"] == RETURNED_ID
     ]
 
 
@@ -689,12 +691,12 @@ class TestReturnedStatistics:
         calls = _returned_calls()
         assert len(calls) == 1
         meta, stats = calls[0][1], calls[0][2]
-        assert meta.name == "Pacific Power 123 Main St Grid Return"
-        assert meta.unit_of_measurement == "kWh"
-        assert [s.state for s in stats] == [28.32, 0.0]
-        assert [s.sum for s in stats] == [28.32, 28.32]
-        # Same period-ending shift as consumption
-        assert stats[0].start.date() == datetime(2025, 8, 1).date()
+        assert meta["name"] == "Pacific Power 123 Main St Grid Return"
+        assert meta["unit_of_measurement"] == "kWh"
+        assert [s["state"] for s in stats] == [28.32, 0.0]
+        assert [s["sum"] for s in stats] == [28.32, 28.32]
+        # Export is labeled with the day it happened, so no shift
+        assert stats[0]["start"].date() == datetime(2025, 8, 2).date()
         # Consumption and its cost are still inserted; export gets no cost
         assert mock_async_add_external_statistics.call_count == 3
 
@@ -727,7 +729,7 @@ class TestReturnedStatistics:
 
         calls = _returned_calls()
         assert len(calls) == 1
-        assert [s.state for s in calls[0][2]] == [0.0]
+        assert [s["state"] for s in calls[0][2]] == [0.0]
 
     @pytest.mark.asyncio
     async def test_skips_negative_returned(self, mock_hass, mock_entry):
@@ -738,7 +740,7 @@ class TestReturnedStatistics:
         coord = _make_coordinator(mock_hass, mock_entry)
         await coord._fetch_daily(_make_mock_api(daily=daily))
 
-        assert [s.state for s in _returned_calls()[0][2]] == [5.0]
+        assert [s["state"] for s in _returned_calls()[0][2]] == [5.0]
 
     @pytest.mark.asyncio
     async def test_ami_meter_fetches_daily_for_returned(
@@ -759,11 +761,13 @@ class TestReturnedStatistics:
         api.async_get_daily_usage.assert_awaited()
         calls = _returned_calls()
         assert len(calls) == 1
-        assert [s.state for s in calls[0][2]] == [28.32]
+        assert [s["state"] for s in calls[0][2]] == [28.32]
+        # Export is labeled with the day it happened, so no shift
+        assert calls[0][2][0]["start"].date() == datetime(2025, 8, 2).date()
         # Hourly consumption comes from the interval data, not the daily rows
         usage = [
             c[0][2]
             for c in mock_async_add_external_statistics.call_args_list
-            if c[0][1].statistic_id.endswith("_energy_consumption")
+            if c[0][1]["statistic_id"].endswith("_energy_consumption")
         ]
-        assert [s.state for s in usage[0]] == [1.0]
+        assert [s["state"] for s in usage[0]] == [1.0]
