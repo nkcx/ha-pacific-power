@@ -711,6 +711,51 @@ class TestDailyUsage:
         assert len(result) == 1
         assert result[0].date == "2025-08-01"
 
+    @pytest.mark.asyncio
+    async def test_parses_reverse_usage(self) -> None:
+        api = PacificPowerApi("u", "p")
+        account = AccountInfo("C1", "01", "01", "Addr")
+
+        canned = {
+            "getUsageForDateRangeResponseBody": {
+                "dailyUsageList": {
+                    "usgHistoryLineItem": [
+                        {
+                            "usagePeriodEndDate": "2025-08-01",
+                            "kwhUsageQuantity": "29.80",
+                            "kwhReverseUsageQuantity": "28.32",
+                        },
+                        {
+                            "usagePeriodEndDate": "2025-08-02",
+                            "kwhUsageQuantity": "10.00",
+                            "kwhReverseUsageQuantity": "",
+                        },
+                        {
+                            "usagePeriodEndDate": "2025-08-03",
+                            "kwhUsageQuantity": "11.00",
+                            "kwhReverseUsageQuantity": "n/a",
+                        },
+                        {
+                            "usagePeriodEndDate": "2025-08-04",
+                            "kwhUsageQuantity": "12.00",
+                        },
+                    ]
+                }
+            }
+        }
+
+        async def mock_api_call(path: str, body: dict | None) -> dict:
+            return canned
+
+        api._api_call = mock_api_call  # type: ignore[assignment]
+        result = await api.async_get_daily_usage(
+            account, datetime(2025, 8, 1), datetime(2025, 8, 4)
+        )
+        assert result[0] == DailyUsage(
+            date="2025-08-01", kwh=29.8, returned_kwh=28.32
+        )
+        assert [r.returned_kwh for r in result[1:]] == [None, None, None]
+
 
 # ---------------------------------------------------------------------------
 # Hourly usage parsing

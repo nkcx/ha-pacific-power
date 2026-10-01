@@ -64,6 +64,7 @@ class DailyUsage:
 
     date: str
     kwh: float
+    returned_kwh: float | None = None
 
 
 @dataclass
@@ -83,6 +84,16 @@ def _collect_cookies(resp: aiohttp.ClientResponse, cookies: dict[str, str]) -> N
             eq = nv.find("=")
             if eq > 0:
                 cookies[nv[:eq]] = nv[eq + 1 :]
+
+
+def _optional_float(value: object) -> float | None:
+    """Parse a numeric API field, returning None when absent or malformed."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class PacificPowerApi:
@@ -296,6 +307,7 @@ class PacificPowerApi:
             DailyUsage(
                 date=item["usagePeriodEndDate"],
                 kwh=float(item.get("kwhUsageQuantity", 0)),
+                returned_kwh=_optional_float(item.get("kwhReverseUsageQuantity")),
             )
             for item in items
             if "usagePeriodEndDate" in item

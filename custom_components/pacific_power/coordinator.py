@@ -130,6 +130,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
 
             if is_ami and self._account.site_idn:
                 new_data_ts = await self._fetch_hourly(api)
+                await self._fetch_returned_daily(api)
             else:
                 new_data_ts = await self._fetch_daily(api)
         except PacificPowerAuthError as err:
@@ -211,8 +212,27 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
     async def _fetch_daily(self, api: PacificPowerApi) -> datetime | None:
         """Fetch day-by-day data for non-AMI meters."""
         start = await self._fetch_start(OVERLAP_DAYS_DAILY)
+        readings = await self._fetch_daily_readings(api, start)
 
-        tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
+        await self._insert_returned(readings)
+        return await self._insert_statistics(
+            self._normalize_daily([(r.date, r.kwh) for r in readings])
+        )
+
+    async def _fetch_returned_daily(self, api: PacificPowerApi) -> None:
+        """Fetch day-by-day grid export for AMI meters.
+
+        The interval endpoint only reports delivered energy, so export comes
+        from the daily view even when consumption is hourly.
+        """
+        start = await self._fetch_start(OVERLAP_DAYS_DAILY, "energy_returned")
+        readings = await self._fetch_daily_readings(api, start)
+        await self._insert_returned(readings)
+
+    async def _fetch_daily_readings(
+        self, api: PacificPowerApi, start: datetime
+    ) -> list[DailyUsage]:
+        """Fetch daily readings month by month from start, deduplicated by date."""
         now = datetime.now(UTC)
         all_readings: list[DailyUsage] = []
         cursor = start.replace(day=1)
@@ -234,22 +254,29 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         deduped: dict[str, DailyUsage] = {}
         for reading in all_readings:
             deduped[reading.date] = reading
+        return list(deduped.values())
 
+    def _normalize_daily(
+        self, values: list[tuple[str, float]]
+    ) -> list[tuple[datetime, float]]:
+        """Convert (usagePeriodEndDate, kWh) pairs to (period start, kWh)."""
+        tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
         normalized: list[tuple[datetime, float]] = []
-        for reading in deduped.values():
-            if reading.kwh < 0:
+        for date_str, kwh in values:
+            if kwh < 0:
                 continue
             # usagePeriodEndDate is period-ending; shift back one day
-            start_dt = datetime.strptime(reading.date, "%Y-%m-%d").replace(
+            start_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(
                 tzinfo=tz
             ) - timedelta(days=1)
-            normalized.append((start_dt, reading.kwh))
+            normalized.append((start_dt, kwh))
+        return normalized
 
-        return await self._insert_statistics(normalized)
-
-    async def _fetch_start(self, overlap_days: int) -> datetime:
+    async def _fetch_start(
+        self, overlap_days: int, kind: str = "energy_consumption"
+    ) -> datetime:
         """Return the datetime to start fetching from."""
-        stat_id = _make_stat_id(self._account)
+        stat_id = _make_stat_id(self._account, kind)
         last_stats = await get_instance(self.hass).async_add_executor_job(
             get_last_statistics, self.hass, 1, stat_id, False, {"start"}
         )
@@ -267,40 +294,61 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             return None
 
         readings.sort(key=lambda r: r[0])
-        first_start = readings[0][0]
 
         stat_id = _make_stat_id(self._account)
-        running_sum = await self._sum_before(stat_id, first_start)
-
-        statistics: list[StatisticData] = []
-        for start_dt, kwh in readings:
-            running_sum += kwh
-            statistics.append(StatisticData(start=start_dt, state=kwh, sum=running_sum))
-
-        async_add_external_statistics(
-            self.hass, self._make_metadata(stat_id), statistics
-        )
-        _LOGGER.debug("Inserted %d statistics for %s", len(statistics), stat_id)
+        await self._insert_series(self._make_metadata(stat_id), readings)
 
         rate = float(self._entry.options.get(CONF_COST_PER_KWH, 0) or 0)
         if rate > 0:
             cost_id = _make_stat_id(self._account, "energy_cost")
-            cost_sum = await self._sum_before(cost_id, first_start)
-            cost_statistics: list[StatisticData] = []
-            for start_dt, kwh in readings:
-                cost = kwh * rate
-                cost_sum += cost
-                cost_statistics.append(
-                    StatisticData(start=start_dt, state=cost, sum=cost_sum)
-                )
-            async_add_external_statistics(
-                self.hass, self._make_cost_metadata(cost_id), cost_statistics
-            )
-            _LOGGER.debug(
-                "Inserted %d statistics for %s", len(cost_statistics), cost_id
+            await self._insert_series(
+                self._make_cost_metadata(cost_id),
+                [(start_dt, kwh * rate) for start_dt, kwh in readings],
             )
 
         return readings[-1][0]
+
+    async def _insert_returned(self, daily: list[DailyUsage]) -> None:
+        """Insert grid-export statistics from daily readings.
+
+        Accounts without solar report zero export every day, so the series
+        is only created once some export shows up; after that, zero days
+        are inserted like any other reading.
+        """
+        readings = self._normalize_daily(
+            [(r.date, r.returned_kwh) for r in daily if r.returned_kwh is not None]
+        )
+        if not readings:
+            return
+        stat_id = _make_stat_id(self._account, "energy_returned")
+        if not any(kwh > 0 for _, kwh in readings):
+            last_stats = await get_instance(self.hass).async_add_executor_job(
+                get_last_statistics, self.hass, 1, stat_id, False, {"start"}
+            )
+            if not last_stats or stat_id not in last_stats:
+                return
+
+        readings.sort(key=lambda r: r[0])
+        await self._insert_series(
+            self._make_metadata(stat_id, " Grid Return"), readings
+        )
+
+    async def _insert_series(
+        self, metadata: StatisticMetaData, readings: list[tuple[datetime, float]]
+    ) -> None:
+        """Insert sorted (start, value) readings as a cumulative-sum statistic."""
+        stat_id = metadata.statistic_id
+        running_sum = await self._sum_before(stat_id, readings[0][0])
+
+        statistics: list[StatisticData] = []
+        for start_dt, value in readings:
+            running_sum += value
+            statistics.append(
+                StatisticData(start=start_dt, state=value, sum=running_sum)
+            )
+
+        async_add_external_statistics(self.hass, metadata, statistics)
+        _LOGGER.debug("Inserted %d statistics for %s", len(statistics), stat_id)
 
     async def _sum_before(self, stat_id: str, first_start: datetime) -> float:
         """Return the cumulative sum just before first_start.
@@ -355,13 +403,13 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
             },
         )
 
-    def _make_metadata(self, stat_id: str) -> StatisticMetaData:
+    def _make_metadata(self, stat_id: str, name_suffix: str = "") -> StatisticMetaData:
         utility = self._entry.data.get(CONF_UTILITY, UTILITY_PACIFIC_POWER)
         utility_name = UTILITY_DOMAINS[utility]["name"]
         return StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
             has_sum=True,
-            name=f"{utility_name} {self._account.address}",
+            name=f"{utility_name} {self._account.address}{name_suffix}",
             source=DOMAIN,
             statistic_id=stat_id,
             unit_class="energy",

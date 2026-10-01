@@ -653,3 +653,117 @@ class TestCostStatistics:
         calls = mock_async_add_external_statistics.call_args_list
         assert calls[0][0][2][0].sum == 100.0  # (100 - 10) + 10
         assert calls[1][0][2][0].sum == 50.0  # (50 - 5) + 10 * 0.5
+
+
+# ---- Grid return statistics ----
+
+
+RETURNED_ID = "pacific_power:12345_001_energy_returned"
+
+
+def _returned_calls():
+    return [
+        c[0]
+        for c in mock_async_add_external_statistics.call_args_list
+        if c[0][1].statistic_id == RETURNED_ID
+    ]
+
+
+class TestReturnedStatistics:
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        mock_get_last_statistics.return_value = {}
+        mock_statistics_during_period.return_value = {}
+        mock_async_add_external_statistics.reset_mock()
+
+    @pytest.mark.asyncio
+    async def test_daily_meter_inserts_returned(self, mock_hass, mock_entry):
+        mock_entry.options = {CONF_COST_PER_KWH: 0.25}
+        daily = [
+            DailyUsage(date="2025-08-02", kwh=29.8, returned_kwh=28.32),
+            DailyUsage(date="2025-08-03", kwh=10.0, returned_kwh=0.0),
+        ]
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._fetch_daily(_make_mock_api(daily=daily))
+
+        calls = _returned_calls()
+        assert len(calls) == 1
+        meta, stats = calls[0][1], calls[0][2]
+        assert meta.name == "Pacific Power 123 Main St Grid Return"
+        assert meta.unit_of_measurement == "kWh"
+        assert [s.state for s in stats] == [28.32, 0.0]
+        assert [s.sum for s in stats] == [28.32, 28.32]
+        # Same period-ending shift as consumption
+        assert stats[0].start.date() == datetime(2025, 8, 1).date()
+        # Consumption and its cost are still inserted; export gets no cost
+        assert mock_async_add_external_statistics.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_no_returned_stat_without_export(self, mock_hass, mock_entry):
+        daily = [
+            DailyUsage(date="2025-08-02", kwh=10.0, returned_kwh=0.0),
+            DailyUsage(date="2025-08-03", kwh=12.0),
+        ]
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._fetch_daily(_make_mock_api(daily=daily))
+
+        assert _returned_calls() == []
+        assert mock_async_add_external_statistics.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_zero_export_continues_existing_series(self, mock_hass, mock_entry):
+        def _last(hass, n, stat_id, *args):
+            if stat_id == RETURNED_ID:
+                return {stat_id: [{"start": datetime(2025, 8, 1, tzinfo=UTC).timestamp()}]}
+            return {}
+
+        mock_get_last_statistics.side_effect = _last
+        try:
+            daily = [DailyUsage(date="2025-08-02", kwh=10.0, returned_kwh=0.0)]
+            coord = _make_coordinator(mock_hass, mock_entry)
+            await coord._fetch_daily(_make_mock_api(daily=daily))
+        finally:
+            mock_get_last_statistics.side_effect = None
+
+        calls = _returned_calls()
+        assert len(calls) == 1
+        assert [s.state for s in calls[0][2]] == [0.0]
+
+    @pytest.mark.asyncio
+    async def test_skips_negative_returned(self, mock_hass, mock_entry):
+        daily = [
+            DailyUsage(date="2025-08-02", kwh=10.0, returned_kwh=-1.0),
+            DailyUsage(date="2025-08-03", kwh=10.0, returned_kwh=5.0),
+        ]
+        coord = _make_coordinator(mock_hass, mock_entry)
+        await coord._fetch_daily(_make_mock_api(daily=daily))
+
+        assert [s.state for s in _returned_calls()[0][2]] == [5.0]
+
+    @pytest.mark.asyncio
+    async def test_ami_meter_fetches_daily_for_returned(
+        self, mock_hass, mock_entry, mock_account
+    ):
+        hourly = [HourlyUsage(date="2025-08-01", time="1:00", kwh=1.0)]
+        daily = [DailyUsage(date="2025-08-02", kwh=29.8, returned_kwh=28.32)]
+        api = _make_mock_api(
+            accounts=[mock_account], is_ami=True, hourly=hourly, daily=daily
+        )
+        coord = _make_coordinator(mock_hass, mock_entry)
+        with patch(
+            "custom_components.pacific_power.coordinator.PacificPowerApi",
+            return_value=api,
+        ):
+            await coord._async_update_data()
+
+        api.async_get_daily_usage.assert_awaited()
+        calls = _returned_calls()
+        assert len(calls) == 1
+        assert [s.state for s in calls[0][2]] == [28.32]
+        # Hourly consumption comes from the interval data, not the daily rows
+        usage = [
+            c[0][2]
+            for c in mock_async_add_external_statistics.call_args_list
+            if c[0][1].statistic_id.endswith("_energy_consumption")
+        ]
+        assert [s.state for s in usage[0]] == [1.0]

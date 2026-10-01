@@ -8,6 +8,7 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that impor
 - Automatic login and data fetch — no manual downloads
 - Daily kWh consumption data inserted into HA long-term statistics
 - Hourly data for AMI smart meters
+- Energy returned to the grid (solar / net metering)
 - Works with the Energy Dashboard out of the box
 - Auto-discovers accounts and metered agreements during setup
 - Refreshes every 12 hours
@@ -81,6 +82,14 @@ The meter type is auto-detected. If your meter supports hourly data, the integra
 
 With **Cost per kWh** configured (see [Options](#options)), a companion `pacific_power:..._energy_cost` statistic tracks cumulative cost over the same periods.
 
+### Grid Return (Solar)
+
+If your account reports energy exported to the grid (for example, rooftop solar on net metering), the integration also creates a `pacific_power:..._energy_returned` statistic with daily kWh returned. It appears after the first refresh that sees non-zero export; accounts without export don't get one.
+
+Export is always daily, even on AMI meters, because the portal's hourly data only covers energy delivered from the grid. In hourly Energy Dashboard views, each day's export shows up as a single block at the start of the day.
+
+Solar production itself isn't available from the utility; use your inverter's integration for that.
+
 ### Diagnostic Sensors
 
 | Sensor | Description |
@@ -98,6 +107,7 @@ After the first data fetch:
 2. **Grid consumption** → **Add consumption**
 3. Select the `pacific_power:...energy_consumption` statistic
 4. *(Optional)* If you configured **Cost per kWh**, choose **Use an entity tracking the total costs** and select the `pacific_power:..._energy_cost` statistic
+5. *(Solar)* Under **Return to grid** → **Add return**, select the `pacific_power:..._energy_returned` statistic
 
 ## Data Updates
 
