@@ -257,23 +257,20 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         return list(deduped.values())
 
     def _normalize_daily(
-        self, values: list[tuple[str, float]], *, period_ending: bool = True
+        self, values: list[tuple[str, float]]
     ) -> list[tuple[datetime, float]]:
         """Convert (usagePeriodEndDate, kWh) pairs to (day start, kWh).
 
-        With period_ending, the date is the day after the usage and shifts
-        back one day (consumption). Otherwise the date is the day itself
-        (export, which matches the portal's labels).
+        Despite its name, usagePeriodEndDate is the day the energy was used
+        or exported: it matches the portal's labels and the summed hourly
+        interval data for the same date.
         """
         tz = ZoneInfo(self._entry.data.get(CONF_TIMEZONE, self.hass.config.time_zone))
-        shift = timedelta(days=1) if period_ending else timedelta(0)
         normalized: list[tuple[datetime, float]] = []
         for date_str, kwh in values:
             if kwh < 0:
                 continue
-            start_dt = (
-                datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=tz) - shift
-            )
+            start_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=tz)
             normalized.append((start_dt, kwh))
         return normalized
 
@@ -321,8 +318,7 @@ class PacificPowerCoordinator(DataUpdateCoordinator[PacificPowerData]):
         are inserted like any other reading.
         """
         readings = self._normalize_daily(
-            [(r.date, r.returned_kwh) for r in daily if r.returned_kwh is not None],
-            period_ending=False,
+            [(r.date, r.returned_kwh) for r in daily if r.returned_kwh is not None]
         )
         if not readings:
             return

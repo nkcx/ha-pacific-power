@@ -385,8 +385,8 @@ class TestFetchDaily:
         assert stats[0]["state"] == 12.0
 
     @pytest.mark.asyncio
-    async def test_shifts_dates_back_one_day(self, mock_hass, mock_entry):
-        """usagePeriodEndDate is period-ending, so stats shift back one day."""
+    async def test_dates_are_not_shifted(self, mock_hass, mock_entry):
+        """usagePeriodEndDate is the usage day itself, so stats start on it."""
         readings = [DailyUsage(date="2025-08-02", kwh=10.0)]
         api = AsyncMock()
         api.async_get_daily_usage = AsyncMock(
@@ -400,7 +400,7 @@ class TestFetchDaily:
         await coord._fetch_daily(api)
 
         stats = mock_async_add_external_statistics.call_args[0][2]
-        assert stats[0]["start"].day == 1
+        assert stats[0]["start"].day == 2
 
 
 # ---- _fetch_hourly ----
@@ -695,7 +695,7 @@ class TestReturnedStatistics:
         assert meta["unit_of_measurement"] == "kWh"
         assert [s["state"] for s in stats] == [28.32, 0.0]
         assert [s["sum"] for s in stats] == [28.32, 28.32]
-        # Export is labeled with the day it happened, so no shift
+        # Labeled with the day it happened, like consumption
         assert stats[0]["start"].date() == datetime(2025, 8, 2).date()
         # Consumption and its cost are still inserted; export gets no cost
         assert mock_async_add_external_statistics.call_count == 3
@@ -762,7 +762,7 @@ class TestReturnedStatistics:
         calls = _returned_calls()
         assert len(calls) == 1
         assert [s["state"] for s in calls[0][2]] == [28.32]
-        # Export is labeled with the day it happened, so no shift
+        # Labeled with the day it happened, like consumption
         assert calls[0][2][0]["start"].date() == datetime(2025, 8, 2).date()
         # Hourly consumption comes from the interval data, not the daily rows
         usage = [
