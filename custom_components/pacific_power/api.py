@@ -204,15 +204,16 @@ class PacificPowerApi:
                     site_idn=ma.get("siteIDN", 0),
                     service_sequence=ma.get("serviceSequence", 0),
                 )
-                if status.lower() == "active":
+                # New accounts report "Open" rather than "Active".
+                if status.lower() in ("active", "open"):
                     active.append(account)
                 else:
                     inactive.append(account)
 
         if active:
             return active
-        # Brand-new accounts may not report "Active" yet; rather than finding
-        # nothing, offer whatever agreements exist.
+        # Unrecognized statuses: rather than finding nothing, offer whatever
+        # agreements exist.
         if inactive:
             _LOGGER.warning(
                 "No active metered agreements found; using agreements with "
