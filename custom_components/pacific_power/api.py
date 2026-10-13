@@ -166,11 +166,13 @@ class PacificPowerApi:
         if isinstance(web_accounts, dict):
             web_accounts = [web_accounts]
 
-        accounts: list[AccountInfo] = []
+        active: list[AccountInfo] = []
+        inactive: list[AccountInfo] = []
+        statuses: list[str] = []
         for wa in web_accounts:
             cid = str(wa.get("customer", {}).get("idn", ""))
             aseq = str(wa.get("sequence", ""))
-            addr = wa.get("mailingAddressLine1", "").strip()
+            addr = (wa.get("mailingAddressLine1") or "").strip()
             if not cid or not aseq:
                 continue
             ma_resp = await self._api_call(
@@ -192,18 +194,37 @@ class PacificPowerApi:
             if isinstance(metered_agreements, dict):
                 metered_agreements = [metered_agreements]
             for ma in metered_agreements:
-                if ma.get("agreementStatus") == "Active":
-                    accounts.append(
-                        AccountInfo(
-                            customer_idn=cid,
-                            account_sequence=aseq,
-                            agreement_sequence=str(ma.get("agreementSequence", "")),
-                            address=addr,
-                            site_idn=ma.get("siteIDN", 0),
-                            service_sequence=ma.get("serviceSequence", 0),
-                        )
-                    )
-        return accounts
+                status = str(ma.get("agreementStatus", ""))
+                statuses.append(status)
+                account = AccountInfo(
+                    customer_idn=cid,
+                    account_sequence=aseq,
+                    agreement_sequence=str(ma.get("agreementSequence", "")),
+                    address=addr,
+                    site_idn=ma.get("siteIDN", 0),
+                    service_sequence=ma.get("serviceSequence", 0),
+                )
+                if status.lower() == "active":
+                    active.append(account)
+                else:
+                    inactive.append(account)
+
+        if active:
+            return active
+        # Brand-new accounts may not report "Active" yet; rather than finding
+        # nothing, offer whatever agreements exist.
+        if inactive:
+            _LOGGER.warning(
+                "No active metered agreements found; using agreements with "
+                "status %s",
+                statuses,
+            )
+            return inactive
+        _LOGGER.warning(
+            "No metered agreements found (%d web account(s) returned)",
+            len(web_accounts),
+        )
+        return []
 
     async def async_is_ami_meter(self, account: AccountInfo) -> bool:
         """Check if the account has an AMI smart meter (hourly data)."""

@@ -164,6 +164,15 @@ automation:
 - Make sure you selected the correct utility in the setup dropdown
 - Check that MFA is disabled on your account
 
+### "No accounts found for this login"
+- Login worked, but the portal returned no metered service agreements for the selected utility
+- Make sure you selected the correct utility (Pacific Power vs Rocky Mountain Power)
+- If this persists, enable debug logging for `custom_components.pacific_power`, retry setup, and attach the log to an issue — the integration logs which agreement statuses the portal returned
+
+### Only the two diagnostic sensors appear
+- This is expected: usage data is not exposed as sensor entities, it's inserted as long-term statistics
+- Add the `pacific_power:..._energy_consumption` statistic in the Energy Dashboard (see [Energy Dashboard](#energy-dashboard)) and look at the last few days — data lags 24–48 hours
+
 ### "Unable to connect"
 - PacifiCorp's servers may be temporarily down — try again later
 - Check your HA instance has outbound internet access

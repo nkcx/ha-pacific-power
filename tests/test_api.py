@@ -576,6 +576,80 @@ class TestGetAccounts:
         assert accounts[0].agreement_sequence == "02"
 
     @pytest.mark.asyncio
+    async def test_falls_back_when_no_active_agreements(self) -> None:
+        api = PacificPowerApi("u", "p")
+
+        canned_account_list = {
+            "getAccountListResponseBody": {
+                "accountList": {
+                    "webAccount": {
+                        "customer": {"idn": "X"},
+                        "sequence": "01",
+                        "mailingAddressLine1": None,
+                    }
+                }
+            }
+        }
+        canned_agreements = {
+            "getMeteredAgreementsResponseBody": {
+                "meteredAgreementList": {
+                    "meteredAgreement": {
+                        "agreementSequence": "01",
+                        "agreementStatus": "Pending",
+                        "siteIDN": 1,
+                        "serviceSequence": 1,
+                    }
+                }
+            }
+        }
+
+        async def mock_api_call(path: str, body: dict | None) -> dict:
+            if "getAccountList" in path:
+                return canned_account_list
+            return canned_agreements
+
+        api._api_call = mock_api_call  # type: ignore[assignment]
+        accounts = await api.async_get_accounts("w")
+        assert len(accounts) == 1
+        assert accounts[0].agreement_sequence == "01"
+        assert accounts[0].address == ""
+
+    @pytest.mark.asyncio
+    async def test_active_status_is_case_insensitive(self) -> None:
+        api = PacificPowerApi("u", "p")
+
+        canned_account_list = {
+            "getAccountListResponseBody": {
+                "accountList": {
+                    "webAccount": {
+                        "customer": {"idn": "X"},
+                        "sequence": "01",
+                        "mailingAddressLine1": "Addr",
+                    }
+                }
+            }
+        }
+        canned_agreements = {
+            "getMeteredAgreementsResponseBody": {
+                "meteredAgreementList": {
+                    "meteredAgreement": [
+                        {"agreementSequence": "01", "agreementStatus": "Closed"},
+                        {"agreementSequence": "02", "agreementStatus": "ACTIVE"},
+                    ]
+                }
+            }
+        }
+
+        async def mock_api_call(path: str, body: dict | None) -> dict:
+            if "getAccountList" in path:
+                return canned_account_list
+            return canned_agreements
+
+        api._api_call = mock_api_call  # type: ignore[assignment]
+        accounts = await api.async_get_accounts("w")
+        assert [a.agreement_sequence for a in accounts] == ["02"]
+
+    @pytest.mark.asyncio
     async def test_skips_accounts_missing_idn(self) -> None:
         api = PacificPowerApi("u", "p")
 
