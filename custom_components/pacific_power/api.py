@@ -216,8 +216,7 @@ class PacificPowerApi:
         # agreements exist.
         if inactive:
             _LOGGER.warning(
-                "No active metered agreements found; using agreements with "
-                "status %s",
+                "No active metered agreements found; using agreements with status %s",
                 statuses,
             )
             return inactive
