@@ -1,6 +1,7 @@
 {
   "domain": "pacific_power",
   "name": "Pacific Power",
+  "categories": ["energy.meters_monitoring"],
   "codeowners": ["@nkcx"],
   "config_flow": true,
   "dependencies": ["recorder"],
