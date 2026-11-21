@@ -27,6 +27,10 @@ PacifiCorp's web portals encrypt all API traffic using RSA signatures and AES-25
 
 ### HACS (Recommended)
 
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=nkcx&repository=ha-pacific-power&category=integration)
+
+Or by hand:
+
 1. Open HACS → **Custom repositories**
 2. Add `https://github.com/nkcx/ha-pacific-power` as an **Integration**
 3. Search for "Pacific Power" and install
@@ -38,7 +42,10 @@ Copy `custom_components/pacific_power` to your HA `custom_components` folder and
 
 ## Setup
 
-1. **Settings** → **Devices & Services** → **Add Integration** → **Pacific Power**
+1. **Settings** → **Devices & Services** → **Add Integration** → **Pacific Power**, or use this button:
+
+   [![Open your Home Assistant instance and start setting up Pacific Power.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=pacific_power)
+
 2. Select your utility — **Pacific Power** or **Rocky Mountain Power**
 3. Enter your username and password
 4. Your account is auto-discovered — select it if you have multiple
